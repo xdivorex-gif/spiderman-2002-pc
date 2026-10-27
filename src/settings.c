@@ -30,6 +30,14 @@
  *                             the DualSense's white symbols, ps4 the coloured
  *                             ones; "playstation" is ps5), and the button
  *                             names in the text (overlay\pc_ps)
+ *   [Game]
+ *   Costume=default           default: the game's own choice (Secret Store,
+ *                             cheats) | spiderman: the classic suit | peter,
+ *                             wrestler, alexross, goblin, mjspidey,
+ *                             shockspidey, scispidey, thugspidey, btgspidey,
+ *                             sthspidey, helispidey, freakspidey, copspidey.
+ *                             Worn from the next level start; levels with
+ *                             their own hero keep it (recomp_manual.c)
  *   [Pad], [Keyboard]         controller and key mapping, read by the toolkit
  *                             (src/input/input_config.h): a=south, a=Z ...
  */
@@ -143,6 +151,11 @@ void settings_apply(void)
             set("RECOMP_OVERLAY_DIR", ov);
         }
     }
+
+    /* "default" leaves RECOMP_COSTUME as the environment has it (a .bat). */
+    GetPrivateProfileStringA("Game", "Costume", "default", v, sizeof v, ini);
+    if (_stricmp(v, "default"))
+        set("RECOMP_COSTUME", v);
 
     /* [Pad] and [Keyboard]: the controller and key mapping, read by the
      * toolkit itself (xboxrecomp src/input/input_config.h). */

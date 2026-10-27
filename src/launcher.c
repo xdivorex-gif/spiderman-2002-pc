@@ -41,6 +41,7 @@
 #define ID_PROMPTS     110
 #define ID_CONTROLS    111
 #define ID_RESET       112
+#define ID_COSTUME     113
 #define ID_MAP_BASE    200              /* controls window: 200 + row */
 
 /* Window and panel, 96-dpi units. */
@@ -55,7 +56,29 @@ static char    s_dir[MAX_PATH];      /* the exes' folder, with a trailing \ */
 static char    s_ini[MAX_PATH];
 static HFONT   s_font, s_title_font;
 static int     s_dpi = 96;
-static HWND    s_res, s_aspect, s_aa, s_render, s_full, s_vsync, s_prompts;
+static HWND    s_res, s_aspect, s_aa, s_render, s_full, s_vsync, s_prompts, s_costume;
+
+/* [Game] Costume: settings.ini value and what the list shows. The values are
+ * recomp_manual.c's costume names; the game names only its Secret Store
+ * costumes, so the cheat ones go by their hero name and cheat code. */
+static const struct { const char *value, *label; } s_costumes[] = {
+    { "default",     "Game's choice (Secret Store / cheats)" },
+    { "spiderman",   "Spider-Man (classic suit)" },
+    { "peter",       "Peter Parker" },
+    { "wrestler",    "Wrestler Spider-Man" },
+    { "alexross",    "Alex Ross Spider-Man" },
+    { "goblin",      "Green Goblin" },
+    { "mjspidey",    "mjspidey (GIRLNEXTDOOR)" },
+    { "shockspidey", "shockspidey (HERMANSCHULTZ)" },
+    { "scispidey",   "scispidey (SERUM)" },
+    { "thugspidey",  "thugspidey (KNUCKLES)" },
+    { "btgspidey",   "btgspidey (STICKYRICE)" },
+    { "sthspidey",   "sthspidey (THUGSRUS)" },
+    { "helispidey",  "helispidey (CAPTAINSTACEY)" },
+    { "freakspidey", "freakspidey (FREAKOUT)" },
+    { "copspidey",   "copspidey (REALHERO)" },
+};
+#define N_COSTUMES ((int)(sizeof s_costumes / sizeof s_costumes[0]))
 static HWND    s_main;
 static HBITMAP s_bg;                 /* art + panel, the size of the client area */
 static HBRUSH  s_bg_brush;           /* s_bg as a brush, for transparent labels */
@@ -154,6 +177,10 @@ static void load(void)
     SendMessageA(s_prompts, CB_SETCURSEL,
                  !_stricmp(v, "ps4") ? 2 : !_stricmp(v, "ps5") || !_stricmp(v, "playstation") ? 1 : 0,
                  0);
+    GetPrivateProfileStringA("Game", "Costume", "default", v, sizeof v, s_ini);
+    for (i = N_COSTUMES - 1; i > 0 && _stricmp(v, s_costumes[i].value); i--)
+        ;
+    SendMessageA(s_costume, CB_SETCURSEL, i, 0);
     SendMessageA(s_full, BM_SETCHECK,
                  GetPrivateProfileIntA("Display", "Fullscreen", 1, s_ini) ? BST_CHECKED
                                                                          : BST_UNCHECKED, 0);
@@ -184,6 +211,12 @@ static int save(void)
     ok &= WritePrivateProfileStringA("Controls", "ButtonPrompts",
                                      combo_sel(s_prompts) == 2 ? "ps4"
                                      : combo_sel(s_prompts) == 1 ? "ps5" : "xbox", s_ini);
+    {
+        int c = combo_sel(s_costume);
+        ok &= WritePrivateProfileStringA("Game", "Costume",
+                                         s_costumes[c > 0 && c < N_COSTUMES ? c : 0].value,
+                                         s_ini);
+    }
     if (!ok)
         MessageBoxA(NULL, "Could not write settings.ini.", "Spider-Man", MB_ICONERROR);
     return ok;
@@ -511,7 +544,7 @@ static void make_background(HWND w)
 static void build(HWND w)
 {
     const int lx = 36, cx = 180, cw = 420, rh = 32;
-    int y = PANEL_Y + 12;
+    int y = PANEL_Y + 12, i;
     HWND c;
 
     add(w, "STATIC", "Xbox recompilation", SS_LEFT, 26, 62, 300, 20, 0, s_font);
@@ -544,7 +577,7 @@ static void build(HWND w)
                   ID_VSYNC, s_font);
     add(w, "STATIC", "VSync", SS_LEFT | SS_NOTIFY, cx + 172, y + 1, 100, 20,
         ID_VSYNC_LABEL, s_font);
-    y += 34;
+    y += 30;
 
     add(w, "STATIC", "GRAPHICS", SS_LEFT, lx, y, 200, 20, 0, s_title_font);
     y += 26;
@@ -553,7 +586,14 @@ static void build(HWND w)
                    cx, y, cw, 120, ID_RENDER, s_font);
     combo_add(s_render, "GPU (fast, any resolution)");
     combo_add(s_render, "CPU (reference, 640x480, slow)");
-    y += 40;
+    y += rh;
+    /* Worn from the next level start (recomp_manual.c, sub_000F0690_enter). */
+    add(w, "STATIC", "Costume", SS_LEFT, lx, y + 5, 130, 20, 0, s_font);
+    s_costume = add(w, "COMBOBOX", "", CBS_DROPDOWNLIST | WS_TABSTOP | WS_VSCROLL,
+                    cx, y, cw, 300, ID_COSTUME, s_font);
+    for (i = 0; i < N_COSTUMES; i++)
+        combo_add(s_costume, s_costumes[i].label);
+    y += 36;
 
     add(w, "STATIC", "CONTROLS", SS_LEFT, lx, y, 200, 20, 0, s_title_font);
     y += 26;
