@@ -123,6 +123,18 @@ Recommendation: 4b, after 1-3 work.
    L1 / R1 rotate. Large.
 4. Optional: replace the panel with a native pause-menu item (3a).
 
+## Status
+
+- **Part 1 done (2026-10-27, 13f25b1).** `sub_000F0690_enter` in
+  src/recomp_manual.c sets the chosen costume's byte at level start
+  (settings.ini `[Game] Costume`, launcher "Costume" list, or
+  `RECOMP_COSTUME`). Tested: scispidey in Search for Justice.
+  `sub_000F0690` runs when the menu loads and at each level start reached
+  from the menus (Level Warp, Start); the Continue path was not seen in a
+  run with the hook, so check it next. Note the earlier run where Continue
+  into Warehouse Hunt kept the wrestler with Peter on.
+- Next: part 2/3 (pause panel + apply and restart), then part 4b.
+
 ## Checks done (2026-10-27)
 
 Watched with `RECOMP_PEEK` (src/main.c; follows pointers, see its comment).
