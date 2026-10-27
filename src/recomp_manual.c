@@ -20,8 +20,6 @@
 
 #include <stdio.h>
 #include <stdint.h>
-#include <stdlib.h>   /* getenv */
-#include <string.h>   /* _stricmp */
 #include <stddef.h>   /* ptrdiff_t */
 
 /* ── ICALL trace ring buffer ───────────────────────────────── */
@@ -90,77 +88,20 @@ void sub_002F2B00_enter(void)
     }
 }
 
-/* ── Costume (RECOMP_COSTUME) ──────────────────────────────── */
+/* ── Costume (costume_panel.c) ─────────────────────────────── */
 
 /*
- * The game's costumes are entries of its secrets table (built at boot by
- * sub_000F5CA0 at 0x4BCAA0, 0x2C bytes each). Which one is worn is one byte
- * per entry in the player profile, [[0x4BC614]+0x11C] + 0x1544 + index, at
- * most one set: the Secret Store and the costume cheats write it. At level
- * start sub_000F0690 (this = the app object) walks the set entries and puts
- * that costume's hero name in the hero slot -- except on levels that force
- * their own hero (Peter Parker, the Goblin), which it keeps.
- *
- * RECOMP_COSTUME=<name> (settings.ini [Game] Costume, via settings.c) sets
- * that byte, and clears the other costumes', on entry to sub_000F0690, so
- * the game's own selection loads the suit. "spiderman" clears them all (the
- * classic suit); unset or "default" leaves the game's choice alone. The
- * profile is saved with the game, so the choice is in the save too.
+ * sub_000F0690 is the level start that picks the hero from the costume the
+ * player profile marks as worn (this = the app object). Entering it, the
+ * chosen costume -- settings.ini [Game] Costume, or the pause-menu panel --
+ * is written there first. See costume_panel.c.
  */
 extern __declspec(thread) uint32_t g_ecx;  /* guest registers are per thread */
-
-#define SM_APP_PROFILE      0x11Cu      /* app object -> player profile */
-#define SM_PROFILE_COSTUME  0x1544u     /* + secrets index: 1 = worn */
-#define SM_PROFILE_HERO     0x14E8u     /* the hero's name, 32 bytes */
-
-static const struct { const char *name; int index; } s_costumes[] = {
-    { "spiderman",   -1 },
-    { "peter",        3 },  /* Peter Parker (Secret Store)    */
-    { "wrestler",     4 },  /* Wrestler Spider-Man            */
-    { "alexross",     5 },  /* Alex Ross Spider-Man           */
-    { "goblin",       6 },  /* Green Goblin                   */
-    { "mjspidey",     7 },  /* cheat GIRLNEXTDOOR             */
-    { "shockspidey",  8 },  /* cheat HERMANSCHULTZ            */
-    { "scispidey",    9 },  /* cheat SERUM                    */
-    { "thugspidey",  10 },  /* cheat KNUCKLES                 */
-    { "btgspidey",   11 },  /* cheat STICKYRICE               */
-    { "sthspidey",   12 },  /* cheat THUGSRUS                 */
-    { "helispidey",  13 },  /* cheat CAPTAINSTACEY            */
-    { "freakspidey", 14 },  /* cheat FREAKOUT                 */
-    { "copspidey",   15 },  /* cheat REALHERO                 */
-};
-#define SM_COSTUME_FIRST 3
-#define SM_COSTUME_LAST  15
+void costume_level_start(uint32_t app);
 
 void sub_000F0690_enter(void)
 {
-    static int want = -2;               /* -2 unread, -3 leave alone */
-    static const char *wname;
-    uint32_t profile;
-    int i;
-
-    if (want == -2) {
-        const char *e = getenv("RECOMP_COSTUME");
-        want = -3;
-        for (i = 0; e && i < (int)(sizeof s_costumes / sizeof s_costumes[0]); i++)
-            if (!_stricmp(e, s_costumes[i].name)) {
-                want = s_costumes[i].index;
-                wname = s_costumes[i].name;
-            }
-        if (e && *e && _stricmp(e, "default") && want == -3)
-            fprintf(stderr, "  [COSTUME] unknown RECOMP_COSTUME \"%s\", ignored\n", e);
-    }
-    profile = g_ecx ? GUEST32(g_ecx + SM_APP_PROFILE) : 0;
-    fprintf(stderr, "  [COSTUME] sub_000F0690: app %08X profile %08X hero \"%.31s\"\n",
-            g_ecx, profile,
-            profile ? (const char *)g_xbox_mem_offset + profile + SM_PROFILE_HERO : "");
-    fflush(stderr);
-    if (want == -3 || !profile)
-        return;
-    for (i = SM_COSTUME_FIRST; i <= SM_COSTUME_LAST; i++)
-        *((uint8_t *)g_xbox_mem_offset + profile + SM_PROFILE_COSTUME + i) = (uint8_t)(i == want);
-    fprintf(stderr, "  [COSTUME] level start: %s\n", wname);
-    fflush(stderr);
+    costume_level_start(g_ecx);
 }
 
 /* ── Manual function overrides ─────────────────────────────── */

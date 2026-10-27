@@ -1670,7 +1670,13 @@ static void present_scaled(void)
 
     if (pending && SUCCEEDED(ID3D11DeviceContext_Map(s_ctx, (ID3D11Resource *)stage, 0,
                                                      D3D11_MAP_READ, 0, &m))) {
-        xbox_FramebufferWindowPresentHiRes(m.pData, sw, sh, m.RowPitch);
+        /* The costume panel draws over the paused game (costume_panel.c). */
+        extern void costume_panel_draw(const void **pixels, uint32_t w, uint32_t h,
+                                       uint32_t *pitch);
+        const void *px = m.pData;
+        uint32_t pitch = m.RowPitch;
+        costume_panel_draw(&px, sw, sh, &pitch);
+        xbox_FramebufferWindowPresentHiRes(px, sw, sh, pitch);
         ID3D11DeviceContext_Unmap(s_ctx, (ID3D11Resource *)stage, 0);
     }
     pending = 0;

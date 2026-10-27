@@ -56,6 +56,7 @@ set(GAME_SOURCES
     src/settings.c          # settings.ini -> RECOMP_* switches
     src/spiderman.rc        # replacement art (PlayStation button prompts)
     src/text_patch.c        # Xbox wording in unpacked menu text -> PC
+    src/costume_panel.c     # costume choice, and its panel over the pause menu
     # Add game-specific sources here, e.g.:
     # src/asset_loader.c
     # src/custom_renderer.c
@@ -81,6 +82,7 @@ target_include_directories(${PROJECT_NAME} PRIVATE
     ${CMAKE_CURRENT_SOURCE_DIR}/src/recomp
     ${XBOXRECOMP_DIR}/include
     ${XBOXRECOMP_DIR}/src/kernel    # nv2a_backend.h, for gpu_backend.c
+    ${XBOXRECOMP_DIR}/src/usb       # usb_gamepad.h, for costume_panel.c
 )
 
 # Windows SDK libraries needed at link time

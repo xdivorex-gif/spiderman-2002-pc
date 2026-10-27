@@ -649,7 +649,9 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance,
      * reads an environment variable. */
     {
         extern void settings_apply(void);
+        extern void costume_panel_init(void);
         settings_apply();
+        costume_panel_init();   /* costume choice + pause-menu panel */
     }
 
     /* Unbuffered output for immediate visibility during debugging */
