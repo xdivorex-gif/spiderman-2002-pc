@@ -484,8 +484,9 @@ Warehouse Hunt (reference: PC version, youtube.com/watch?v=f9x_5UIrIfQ).
 - **Committed (xboxrecomp, fix/nv2a-backend-stale-texture):** 20d2a4f strip
   winding, 87cbc0d numbered window dumps, d339ac1 RECOMP_ISR_NO_STALL +
   APU/timer diagnostics (the backup patch in backup_2026-10-27 is now
-  superseded). This folder (spiderman\) is not a git repo, so its files
-  (gpu_backend.c culling, play.bat, notes) are not committed anywhere.
+  superseded). spiderman\ is a git repo since 2026-10-27 (c1dafeb, branch
+  main, local only); .gitignore keeps out build, generated code, cap\,
+  frames\, logs, wavs, overlay\, texpack\ and tools\realesrgan\.
 - **Crash in that run (~frame 2745, ~23 min in, user playing):** hang watch
   fired, then an access violation reading guest 0xFFFFFFBE (eax=0xFFFFFFB4)
   on thread 14308. Guest stack 0x00340972 / 0x00340E3E / 0x00340EBF /
