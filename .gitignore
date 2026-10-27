@@ -1,0 +1,75 @@
+# Build artifacts
+build/
+out/
+bin/
+*.obj
+*.o
+*.lib
+*.a
+*.exe
+*.dll
+*.pdb
+*.ilk
+*.exp
+
+# CMake
+CMakeCache.txt
+CMakeFiles/
+cmake_install.cmake
+Makefile
+
+# Visual Studio
+.vs/
+*.vcxproj
+*.vcxproj.filters
+*.vcxproj.user
+*.sln
+Debug/
+Release/
+x64/
+
+# Generated recompiled code (regenerate from XBE with the recomp pipeline)
+src/recomp/gen/
+
+# Game files (user must provide their own legally-owned copies)
+game/
+*.xbe
+*.iso
+*.xiso
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# OS
+Thumbs.db
+.DS_Store
+
+# Run output: captures, frame dumps, audio recordings, logs
+cap/
+frames/
+logs/
+*.wav
+*.log
+*_log.txt
+*_log[0-9].txt
+*_log_*.txt
+*_out.txt
+*_err.txt
+hang_stacks.txt
+sample_stacks.txt
+ftrace.flag
+pad_live.txt
+
+# Derived from the game's own data (regenerate with tools/)
+overlay/
+texpack/
+
+# Third-party tool download (Real-ESRGAN binaries and models)
+tools/realesrgan/
+
+# Pre-git snapshot, superseded by history
+backup_2026-10-27/

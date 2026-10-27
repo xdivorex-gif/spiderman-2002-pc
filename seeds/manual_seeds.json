@@ -1,0 +1,22 @@
+[
+  {
+    "start": "0x00379DAC",
+    "why": "XPP one-time init (cmp [0x379C6C],0 / jne; sets it to 1, sets up the ports). Reached through an indirect call at boot; no pass found it, so the call failed to resolve."
+  },
+  {
+    "start": "0x002BEDCD",
+    "why": "CRT callback dispatcher (cmp [esp+4],0; calls [0x3F4884] or [0x3F4888]; ret 4). The function before it ends in a call to the thread-exit routine at 0x2A98D4, which never returns, and the disassembler ran on into this one. Called through a pointer thousands of times from the intro movies on."
+  },
+  {
+    "start": "0x0030C072",
+    "why": "A lone `ret` at the tail of sub_0030C056 in D3DX: MSVC folds empty functions onto a ret byte, and a vtable slot points here. Reached once, just after the legal screen."
+  },
+  {
+    "start": "0x002B8B90",
+    "why": "CRT _trandisp2 special-case handler (fstp st0; fstp st0; fldz; ret): two-argument math (pow, atan2...) jumps here through the table at 0x3F48E0 for a zero result. Missed, so the case was skipped with the x87 stack left wrong; hit repeatedly in the training level."
+  },
+  {
+    "start": "0x002B8C32",
+    "why": "Another _trandisp2 handler, four slots of the same table (0x3F48E4/EC/F4/FC). Never found as a function; seeded with its sibling."
+  }
+]

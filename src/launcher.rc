@@ -1,0 +1,2 @@
+// SpiderManLauncher.exe resources: the background art (launcher.c, make_background).
+1 BITMAP "../assets/launcher_bg.bmp"

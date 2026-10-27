@@ -1,0 +1,4 @@
+// spiderman_recomp.exe resources.
+// 101 / 102: the PS5 / PS4 button-prompt strips (gpu_backend.c, texture_replace).
+101 RCDATA "../assets/ps5_buttons.bmp"
+102 RCDATA "../assets/ps4_buttons.bmp"
