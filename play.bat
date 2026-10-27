@@ -46,6 +46,10 @@ rem Sound: Spider-Man answers the APU's sample-limit interrupt by resetting
 rem the DSPs and stalling 10 ms, on the thread that makes the sound -- about
 rem 45% of the audio lost. This lets that stall return at once.
 set RECOMP_ISR_NO_STALL=1
+rem Run the APU's interrupt routine only where the console's one CPU could
+rem have taken it, not beside a thread at raised IRQL: DirectSound tore a
+rem voice down under its routine and crashed (~23 min into a level).
+set RECOMP_DISPATCH_GATE=1
 rem No watchdog: it ends the process after N seconds.
 set RECOMP_WATCHDOG_SECS=
 

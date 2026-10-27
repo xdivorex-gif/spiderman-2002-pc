@@ -510,7 +510,9 @@ Warehouse Hunt (reference: PC version, youtube.com/watch?v=f9x_5UIrIfQ).
   scratchpad gate_drive.bat -> cap\gate\. Full run 12:02-12:25 (22 min:
   scripted play, then the user's own, crane section included, window
   closed normally): 0 crashes, 0 hangs, ungated/forced 0 in all 134 IRQ
-  reports, 0 underruns, median 60.0 flips/s. Not yet in play.bat/settings.c.
+  reports, 0 underruns, median 60.0 flips/s. **Now on:** RECOMP_DISPATCH_GATE=1
+  in play.bat, play_drive.bat, play_capture.bat and settings.c's required
+  list (launcher starts get it; checked with no switches set).
 - **Next suspect if flicker remains:** polygon offset (depth bias) is not
   passed to back ends at all: NV097 SET_POLY_OFFSET_FILL_ENABLE 0x37C,
   SCALE_FACTOR 0x384, BIAS 0x388 -> add to Nv2aRenderState in

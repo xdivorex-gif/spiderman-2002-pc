@@ -56,6 +56,7 @@ static const char *const s_required[][2] = {
     { "RECOMP_AC97_READY",     "1" },       /* sound */
     { "RECOMP_HEAP_RECLAIM",   "1" },       /* free memory between levels */
     { "RECOMP_ISR_NO_STALL",   "1" },       /* no 10 ms sound gap per APU reset */
+    { "RECOMP_DISPATCH_GATE",  "1" },       /* APU ISR never beside DISPATCH code */
 };
 
 static void set(const char *name, const char *value)
