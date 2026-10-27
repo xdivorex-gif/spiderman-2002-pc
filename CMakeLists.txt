@@ -139,6 +139,14 @@ add_custom_command(TARGET ${PROJECT_NAME} POST_BUILD
     COMMAND ${CMAKE_COMMAND} -E copy_directory
             ${CMAKE_CURRENT_SOURCE_DIR}/overlay $<TARGET_FILE_DIR:${PROJECT_NAME}>/overlay)
 
+# Hero models for the costume panel's 3D view (tools/xbxm.py --export builds
+# previews/ from game_files; costume_panel.c reads them), beside the exe.
+if(EXISTS ${CMAKE_CURRENT_SOURCE_DIR}/previews)
+    add_custom_command(TARGET ${PROJECT_NAME} POST_BUILD
+        COMMAND ${CMAKE_COMMAND} -E copy_directory
+                ${CMAKE_CURRENT_SOURCE_DIR}/previews $<TARGET_FILE_DIR:${PROJECT_NAME}>/previews)
+endif()
+
 # High-res menu art and fonts (texpack/<texels hash>.png, gpu_backend.c),
 # beside the exe.
 add_custom_command(TARGET ${PROJECT_NAME} POST_BUILD

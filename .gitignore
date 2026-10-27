@@ -73,3 +73,6 @@ tools/realesrgan/
 
 # Pre-git snapshot, superseded by history
 backup_2026-10-27/
+
+# Hero previews for the costume panel (tools/xbxm.py --export)
+previews/

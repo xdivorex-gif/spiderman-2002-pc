@@ -33,12 +33,22 @@
  * copy: only while the game is paused, so it costs nothing in play. That is
  * the GPU renderer at a raised resolution (RECOMP_RENDER_SIZE); at 640x480
  * the window shows guest memory directly and the panel is not drawn.
+ *
+ * The 3D view. The panel's left half shows the selected costume's model,
+ * turned with L1 / R1 (Black / White) while held. tools/xbxm.py --export
+ * reads the game's hero files (heroes/*.xbs: XBXM meshes, DDS textures) into
+ * previews/<FILE>.hpv beside the exe -- the bind pose, a triangle list and
+ * the DXT texture blocks; the format is in that script. Drawn here by a
+ * small software rasteriser into the copy of the frame, with a light from
+ * the front: it never touches the game's D3D state, and runs only while the
+ * panel is open.
  */
 #include <windows.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 #include <stdint.h>
+#include <math.h>
 
 #include "usb_gamepad.h"
 
@@ -66,21 +76,22 @@ extern ptrdiff_t g_xbox_mem_offset;
 
 /* The names are settings.ini's (and the launcher's); the game names only its
  * Secret Store costumes, so the cheat ones go by hero name and cheat code. */
-static const struct { const char *name; const wchar_t *label; int index; } s_costumes[] = {
-    { "spiderman",   L"Spider-Man",           -1 },
-    { "peter",       L"Peter Parker",          3 },
-    { "wrestler",    L"Wrestler Spider-Man",   4 },
-    { "alexross",    L"Alex Ross Spider-Man",  5 },
-    { "goblin",      L"Green Goblin",          6 },
-    { "mjspidey",    L"mjspidey (GIRLNEXTDOOR)", 7 },
-    { "shockspidey", L"shockspidey (HERMANSCHULTZ)", 8 },
-    { "scispidey",   L"scispidey (SERUM)",     9 },
-    { "thugspidey",  L"thugspidey (KNUCKLES)", 10 },
-    { "btgspidey",   L"btgspidey (STICKYRICE)", 11 },
-    { "sthspidey",   L"sthspidey (THUGSRUS)",  12 },
-    { "helispidey",  L"helispidey (CAPTAINSTACEY)", 13 },
-    { "freakspidey", L"freakspidey (FREAKOUT)", 14 },
-    { "copspidey",   L"copspidey (REALHERO)",  15 },
+static const struct { const char *name; const wchar_t *label; int index; const char *file; }
+s_costumes[] = {
+    { "spiderman",   L"Spider-Man",                 -1, "SPIDERMA" },
+    { "peter",       L"Peter Parker",                3, "PETERSTU" },
+    { "wrestler",    L"Wrestler Spider-Man",         4, "SPIDEYWR" },
+    { "alexross",    L"Alex Ross Spider-Man",        5, "ROSSSPID" },
+    { "goblin",      L"Green Goblin",                6, "PLRGOBLI" },
+    { "mjspidey",    L"mjspidey (GIRLNEXTDOOR)",     7, "MJSPIDEY" },
+    { "shockspidey", L"shockspidey (HERMANSCHULTZ)", 8, "SHOCKSPI" },
+    { "scispidey",   L"scispidey (SERUM)",           9, "SCISPIDE" },
+    { "thugspidey",  L"thugspidey (KNUCKLES)",      10, "THUGSPID" },
+    { "btgspidey",   L"btgspidey (STICKYRICE)",     11, "BTGSPIDE" },
+    { "sthspidey",   L"sthspidey (THUGSRUS)",       12, "STHSPIDE" },
+    { "helispidey",  L"helispidey (CAPTAINSTACEY)", 13, "HELISPID" },
+    { "freakspidey", L"freakspidey (FREAKOUT)",     14, "FREAKSPI" },
+    { "copspidey",   L"copspidey (REALHERO)",       15, "COPSPIDE" },
 };
 #define N_COSTUMES ((int)(sizeof s_costumes / sizeof s_costumes[0]))
 
@@ -244,6 +255,7 @@ static void inject(uint8_t *r)
 /* ── The panel's input ─────────────────────────────────────────── */
 
 static volatile int s_open, s_sel, s_paused;
+static volatile int s_turn;             /* the 3D view: -1 / 0 / +1, held */
 static int s_swallow;                   /* eat the pad until all is released */
 
 #define BTN_UP    0x0001
@@ -251,6 +263,8 @@ static int s_swallow;                   /* eat the pad until all is released */
 #define BTN_A     0x0100
 #define BTN_B     0x0200
 #define BTN_Y     0x0800
+#define BTN_L1    0x1000                /* Black: the left shoulder */
+#define BTN_R1    0x2000                /* White: the right shoulder */
 
 static unsigned buttons(const uint8_t *r)
 {
@@ -326,7 +340,13 @@ static void filter(int pad, uint8_t *r)
         return;
     }
 
-    /* Open: up / down with repeat, A apply, B close. */
+    /* Open: L1 / R1 or the right stick turn the model, up / down with
+     * repeat choose, A apply, B close. */
+    {
+        int16_t rx;
+        memcpy(&rx, r + 16, 2);
+        s_turn = ((now & BTN_R1) || rx > 16000) - ((now & BTN_L1) || rx < -16000);
+    }
     if (edge & (BTN_UP | BTN_DOWN)) {
         held_since = last_repeat = t;
     } else if ((now & (BTN_UP | BTN_DOWN)) && t - held_since > 400 && t - last_repeat > 110) {
@@ -361,6 +381,246 @@ static uint8_t *s_bits;
 static uint32_t s_bw, s_bh;
 static HFONT   s_font_title, s_font_item, s_font_small;
 static uint32_t s_font_h;
+
+/* ── The 3D view ───────────────────────────────────────────────── */
+
+typedef struct { float x, y, z, u, v; } HVert;
+typedef struct { uint32_t first, count; int32_t tex; } HPart;
+typedef struct { uint32_t w, h; uint32_t *px; } HTex;     /* 0x00RRGGBB */
+typedef struct {
+    int loaded;                         /* 1 ok, -1 missing or bad */
+    uint32_t nv, nt, np, nx;
+    HVert *v;
+    uint16_t *t;
+    HPart *p;
+    HTex *x;
+    float lo[3], hi[3];
+} HModel;
+
+static HModel s_models[N_COSTUMES];
+
+static uint32_t rgb565(uint16_t c)
+{
+    uint32_t r = (c >> 11 & 31) * 255 / 31, g = (c >> 5 & 63) * 255 / 63, b = (c & 31) * 255 / 31;
+    return r << 16 | g << 8 | b;
+}
+
+static uint32_t mix(uint32_t a, uint32_t b, int wa, int wb, int d)
+{
+    uint32_t r = (((a >> 16 & 255) * wa + (b >> 16 & 255) * wb) / d);
+    uint32_t g = (((a >> 8 & 255) * wa + (b >> 8 & 255) * wb) / d);
+    uint32_t bl = (((a & 255) * wa + (b & 255) * wb) / d);
+    return r << 16 | g << 8 | bl;
+}
+
+/* The top mip of a DXT1 / DXT5 texture to 0x00RRGGBB (alpha dropped). */
+static void decode_dxt(const uint8_t *src, int dxt5, uint32_t w, uint32_t h, uint32_t *out)
+{
+    uint32_t bx, by, j;
+    for (by = 0; by < h; by += 4)
+        for (bx = 0; bx < w; bx += 4) {
+            uint16_t c0, c1;
+            uint32_t bits, pal[4];
+            if (dxt5)
+                src += 8;               /* the alpha block */
+            memcpy(&c0, src, 2);
+            memcpy(&c1, src + 2, 2);
+            memcpy(&bits, src + 4, 4);
+            src += 8;
+            pal[0] = rgb565(c0);
+            pal[1] = rgb565(c1);
+            if (c0 > c1 || dxt5) {
+                pal[2] = mix(pal[0], pal[1], 2, 1, 3);
+                pal[3] = mix(pal[0], pal[1], 1, 2, 3);
+            } else {
+                pal[2] = mix(pal[0], pal[1], 1, 1, 2);
+                pal[3] = 0;
+            }
+            for (j = 0; j < 16; j++)
+                out[(by + j / 4) * w + bx + j % 4] = pal[bits >> (2 * j) & 3];
+        }
+}
+
+/* previews\<FILE>.hpv beside the exe (tools/xbxm.py --export). */
+static HModel *model(int row)
+{
+    HModel *m = &s_models[row];
+    char path[MAX_PATH], *slash;
+    FILE *f;
+    uint32_t hdr[5], i;
+
+    if (m->loaded)
+        return m->loaded > 0 ? m : NULL;
+    m->loaded = -1;
+    if (!GetModuleFileNameA(NULL, path, sizeof path) || !(slash = strrchr(path, '\\')))
+        return NULL;
+    _snprintf(slash + 1, sizeof path - (slash + 1 - path), "previews\\%s.hpv", s_costumes[row].file);
+    path[sizeof path - 1] = 0;
+    if (!(f = fopen(path, "rb")))
+        return NULL;
+    if (fread(hdr, 4, 5, f) != 5 || hdr[0] != 0x31565048 /* "HPV1" */
+        || hdr[1] > 65536 || hdr[2] > 65536 || hdr[3] > 64 || hdr[4] > 16)
+        goto bad;
+    m->nv = hdr[1]; m->nt = hdr[2]; m->np = hdr[3]; m->nx = hdr[4];
+    m->v = malloc(m->nv * sizeof *m->v);
+    m->t = malloc(m->nt * 6);
+    m->p = malloc(m->np * sizeof *m->p);
+    m->x = calloc(m->nx ? m->nx : 1, sizeof *m->x);
+    if (!m->v || !m->t || !m->p || !m->x
+        || fread(m->v, sizeof *m->v, m->nv, f) != m->nv
+        || fread(m->t, 6, m->nt, f) != m->nt
+        || fread(m->p, sizeof *m->p, m->np, f) != m->np)
+        goto bad;
+    for (i = 0; i < m->nx; i++) {
+        uint32_t th[4];
+        uint8_t *blocks;
+        if (fread(th, 4, 4, f) != 4 || th[0] > 2048 || th[1] > 2048 || th[3] > 8 << 20)
+            goto bad;
+        blocks = malloc(th[3]);
+        m->x[i].w = th[0];
+        m->x[i].h = th[1];
+        m->x[i].px = malloc((size_t)th[0] * th[1] * 4);
+        if (!blocks || !m->x[i].px || fread(blocks, 1, th[3], f) != th[3]) {
+            free(blocks);
+            goto bad;
+        }
+        decode_dxt(blocks, th[2] == 0x35545844 /* "DXT5" */, th[0], th[1], m->x[i].px);
+        free(blocks);
+    }
+    fclose(f);
+    for (i = 0; i < 3; i++) {
+        m->lo[i] = 1e9f;
+        m->hi[i] = -1e9f;
+    }
+    for (i = 0; i < m->nv; i++) {
+        const float *p = &m->v[i].x;
+        int k;
+        for (k = 0; k < 3; k++) {
+            if (p[k] < m->lo[k]) m->lo[k] = p[k];
+            if (p[k] > m->hi[k]) m->hi[k] = p[k];
+        }
+    }
+    m->loaded = 1;
+    return m;
+bad:
+    fclose(f);
+    fprintf(stderr, "  [COSTUME] %s: not a hero preview\n", path);
+    return NULL;
+}
+
+static float *s_zbuf;
+static size_t s_zcap;
+
+/* The model turned by yaw (radians) about its vertical axis, fitted into the
+ * canvas box x0..x1, y0..y1: z-buffered, nearest texel, a front light. */
+static void draw_model(HModel *m, float yaw, int x0, int y0, int x1, int y1)
+{
+    int bw = x1 - x0, bh = y1 - y0, i;
+    float cy = cosf(yaw), sy = sinf(yaw);
+    float cx = (m->lo[0] + m->hi[0]) / 2, cz = (m->lo[2] + m->hi[2]) / 2;
+    float ym = (m->lo[1] + m->hi[1]) / 2;
+    float wide = m->hi[0] - m->lo[0], deep = m->hi[2] - m->lo[2];
+    float reach = sqrtf(wide * wide + deep * deep) / 2;   /* any turn fits */
+    float scale = 0.92f * (bw / (2 * reach) < bh / (m->hi[1] - m->lo[1])
+                           ? bw / (2 * reach) : bh / (m->hi[1] - m->lo[1]));
+    float *sx, *syy, *sz;
+    uint32_t p;
+
+    if (bw < 8 || bh < 8)
+        return;
+    if (s_zcap < (size_t)bw * bh) {
+        free(s_zbuf);
+        s_zcap = (size_t)bw * bh;
+        s_zbuf = malloc(s_zcap * sizeof *s_zbuf);
+        if (!s_zbuf) {
+            s_zcap = 0;
+            return;
+        }
+    }
+    for (i = 0; i < bw * bh; i++)
+        s_zbuf[i] = -1e30f;
+    sx = malloc(m->nv * 3 * sizeof(float));
+    if (!sx)
+        return;
+    syy = sx + m->nv;
+    sz = syy + m->nv;
+    for (i = 0; i < (int)m->nv; i++) {
+        float x = m->v[i].x - cx, z = m->v[i].z - cz;
+        sx[i] = bw / 2.0f + (x * cy + z * sy) * scale;
+        syy[i] = bh / 2.0f - (m->v[i].y - ym) * scale;
+        sz[i] = -x * sy + z * cy;
+    }
+    for (p = 0; p < m->np; p++) {
+        const HTex *tex = m->p[p].tex >= 0 && (uint32_t)m->p[p].tex < m->nx ? &m->x[m->p[p].tex] : NULL;
+        uint32_t t;
+        for (t = m->p[p].first; t < m->p[p].first + m->p[p].count && t < m->nt; t++) {
+            int a = m->t[3 * t], b = m->t[3 * t + 1], c = m->t[3 * t + 2];
+            float ax = sx[a], ay = syy[a], bx = sx[b], by = syy[b], qx = sx[c], qy = syy[c];
+            float den = (by - qy) * (ax - qx) + (qx - bx) * (ay - qy);
+            int minx, maxx, miny, maxy, x, y, shade;
+            float nx, ny, nz, nl;
+            if (a >= (int)m->nv || b >= (int)m->nv || c >= (int)m->nv || fabsf(den) < 1e-6f)
+                continue;
+            /* Face light: the normal in view space, against a light from the
+             * front, a little above and left; both faces lit. */
+            {
+                float ux = (bx - ax), uy = (by - ay), uz = (sz[b] - sz[a]) * scale;
+                float vx = (qx - ax), vy = (qy - ay), vz = (sz[c] - sz[a]) * scale;
+                nx = uy * vz - uz * vy;
+                ny = uz * vx - ux * vz;
+                nz = ux * vy - uy * vx;
+                nl = sqrtf(nx * nx + ny * ny + nz * nz);
+                if (nl < 1e-9f)
+                    continue;
+                nl = fabsf((nx * -0.3f + ny * -0.4f + nz * 0.87f) / nl);
+                shade = (int)(256 * (0.45f + 0.6f * nl));
+                if (shade > 256)
+                    shade = 256;
+            }
+            minx = (int)floorf(fminf(ax, fminf(bx, qx)));
+            maxx = (int)ceilf(fmaxf(ax, fmaxf(bx, qx)));
+            miny = (int)floorf(fminf(ay, fminf(by, qy)));
+            maxy = (int)ceilf(fmaxf(ay, fmaxf(by, qy)));
+            if (minx < 0) minx = 0;
+            if (miny < 0) miny = 0;
+            if (maxx > bw - 1) maxx = bw - 1;
+            if (maxy > bh - 1) maxy = bh - 1;
+            for (y = miny; y <= maxy; y++) {
+                uint32_t *row = (uint32_t *)(s_bits + ((size_t)(y0 + y) * s_bw + x0) * 4);
+                float *zr = s_zbuf + (size_t)y * bw;
+                float py = y + 0.5f;
+                for (x = minx; x <= maxx; x++) {
+                    float px = x + 0.5f;
+                    float l0 = ((by - qy) * (px - qx) + (qx - bx) * (py - qy)) / den;
+                    float l1 = ((qy - ay) * (px - qx) + (ax - qx) * (py - qy)) / den;
+                    float l2 = 1 - l0 - l1, z;
+                    uint32_t col;
+                    if (l0 < 0 || l1 < 0 || l2 < 0)
+                        continue;
+                    z = l0 * sz[a] + l1 * sz[b] + l2 * sz[c];
+                    if (z <= zr[x])
+                        continue;
+                    zr[x] = z;
+                    if (tex) {
+                        float u = l0 * m->v[a].u + l1 * m->v[b].u + l2 * m->v[c].u;
+                        float v = l0 * m->v[a].v + l1 * m->v[b].v + l2 * m->v[c].v;
+                        int tu = (int)floorf(u * tex->w) % (int)tex->w;
+                        int tv = (int)floorf(v * tex->h) % (int)tex->h;
+                        if (tu < 0) tu += tex->w;
+                        if (tv < 0) tv += tex->h;
+                        col = tex->px[(size_t)tv * tex->w + tu];
+                    } else {
+                        col = 0x9A9A9A;
+                    }
+                    row[x] = ((col >> 16 & 255) * shade >> 8) << 16
+                           | ((col >> 8 & 255) * shade >> 8) << 8
+                           | ((col & 255) * shade >> 8);
+                }
+            }
+        }
+    }
+    free(sx);
+}
 
 static int ensure_canvas(uint32_t w, uint32_t h)
 {
@@ -431,14 +691,21 @@ static void text(HFONT f, COLORREF c, int x, int y, int w, int h, UINT fmt, cons
     DrawTextW(s_dc, s, -1, &rc, fmt | DT_NOPREFIX | DT_SINGLELINE);
 }
 
-/* The face buttons as the prompts setting draws them. */
-static const wchar_t *face(char b)
+/* PlayStation button prompts (settings.ini [Controls] ButtonPrompts)? */
+static int ps_prompts(void)
 {
     static int ps = -1;
     if (ps < 0) {
         const char *e = getenv("RECOMP_BUTTON_PROMPTS");
         ps = e && (!_stricmp(e, "ps4") || !_stricmp(e, "ps5"));
     }
+    return ps;
+}
+
+/* The face buttons as the prompts setting draws them. */
+static const wchar_t *face(char b)
+{
+    int ps = ps_prompts();
     /* Code points, not literals: the source stays ASCII whatever the
      * compiler takes its encoding to be. */
     static const wchar_t cross[] = { 0x2715, 0 }, circle[] = { 0x25CB, 0 },
@@ -474,18 +741,35 @@ static void draw_panel(void)
 
     shade(0, 0, (int)s_bw, (int)s_bh, 120);
     shade(px0, py0, px1, py1, 60);
-    /* Left: where the 3D preview goes; the name for now. */
-    shade((int)(s_bw * 0.06), py0, (int)(s_bw * 0.46), py1, 60);
-    text(s_font_title, RGB(200, 30, 30), (int)(s_bw * 0.06), py0 + u, (int)(s_bw * 0.40),
-         u * 3, DT_CENTER, L"COSTUME");
-    text(s_font_item, RGB(240, 240, 240), (int)(s_bw * 0.06), (py0 + py1) / 2 - u,
-         (int)(s_bw * 0.40), u * 2, DT_CENTER | DT_VCENTER, s_costumes[sel].label);
+    /* Left: the selected costume's model, turned by L1 / R1. */
+    {
+        static float yaw;
+        static DWORD last;
+        DWORD now = GetTickCount();
+        int lx0 = (int)(s_bw * 0.06), lx1 = (int)(s_bw * 0.46);
+        HModel *mdl = model(sel);
+        if (last && now - last < 500)
+            yaw += s_turn * 2.2f * (now - last) / 1000.0f;   /* ~126 deg/s */
+        last = now;
+        shade(lx0, py0, lx1, py1, 60);
+        text(s_font_title, RGB(200, 30, 30), lx0, py0 + u, lx1 - lx0, u * 3, DT_CENTER,
+             L"COSTUME");
+        if (mdl)
+            draw_model(mdl, yaw, lx0 + u, py0 + u * 4, lx1 - u, py1 - u * 3);
+        text(s_font_item, RGB(240, 240, 240), lx0, py1 - u * 3, lx1 - lx0, u * 2,
+             DT_CENTER | DT_VCENTER, s_costumes[sel].label);
+        text(s_font_small, RGB(170, 170, 170), lx0, py1 - u * 3 / 2, lx1 - lx0, u,
+             DT_CENTER | DT_VCENTER, ps_prompts() ? L"L1 / R1  Turn" : L"Black / White  Turn");
+        if (!mdl)
+            text(s_font_small, RGB(170, 170, 170), lx0, (py0 + py1) / 2 - u, lx1 - lx0, u * 2,
+                 DT_CENTER | DT_VCENTER, L"(no preview: run tools/xbxm.py --export)");
+    }
 
     for (i = 0; i < N_COSTUMES; i++) {
         int y = list_y + i * row_h;
-        COLORREF c = i == sel ? RGB(255, 255, 255) : RGB(170, 170, 170);
+        COLORREF c = i == sel ? RGB(255, 80, 80) : RGB(175, 175, 175);
         if (i == sel)
-            shade(px0 + u / 2, y, px1 - u / 2, y + row_h, 30);
+            shade(px0 + u / 2, y, px1 - u / 2, y + row_h, 20);
         _snwprintf(s, 96, L"%s%s", s_costumes[i].label, i == worn ? L"   - worn" : L"");
         s[95] = 0;
         text(s_font_item, c, px0 + u, y, px1 - px0 - 2 * u, row_h, DT_LEFT | DT_VCENTER, s);
