@@ -123,10 +123,32 @@ Recommendation: 4b, after 1-3 work.
    L1 / R1 rotate. Large.
 4. Optional: replace the panel with a native pause-menu item (3a).
 
-## Cheap checks before starting
+## Checks done (2026-10-27)
 
-- Unlock one cheat costume (Specials → Cheats, e.g. `SERUM`) and see whether
-  a Costumes screen appears and what it shows. If it already has a 3D
-  preview, part 4 could reuse it.
-- Diff the secrets table (`0x4BCAA0`) before and after, to find the "active"
-  field for part 1.
+Watched with `RECOMP_PEEK` (src/main.c; follows pointers, see its comment).
+
+- **The active costume is one byte per secret, one at a time.** Profile
+  object = `[[0x4BC614]+0x11C]` (0x012BAAC0 in that run); byte
+  `profile + 0x1544 + i` is 1 for the active entry `i` of the secrets table.
+  Entering `SERUM` set i = 9 (scispidey). Setting Peter Parker On in the
+  Secret Store set i = 3 and cleared 9 in the same frame. The secrets table
+  at `0x4BCAA0` itself never changes after boot.
+- **The level loader honours it.** With Peter on, Level Warp → Warehouse Hunt
+  loaded `ORIGIN_B.xbs` with `PETERSTU.xbs` instead of the wrestler suit.
+  So part 1 is: write that byte (and clear the others) before a level loads.
+- **No Costumes screen appears.** With SERUM active, Specials still shows
+  Credits, Cheats, Training, Secret Store, Level Warp. COSTUMES_SCREEN in
+  MENU.xbs is unreachable (cut or PS2-only), so there is no built-in 3D
+  preview to reuse; part 4 stays 4b.
+- **Secret Store's box is text only** ("Play the game as Peter Parker."), no
+  model.
+- Entry indices (0x2C bytes each from 0x4BCAA0): 0 Bowling, 1 Vulture movie,
+  2 Shocker movie, 3 Peter Parker, 4 Wrestler, 5 Alex Ross, 6 Green Goblin,
+  7 mjspidey, 8 shockspidey, 9 scispidey, 10 thugspidey, 11 btgspidey,
+  12 sthspidey, 13 helispidey, 14 freakspidey, 15 copspidey, then
+  Unlimited Webbing and the other cheats (check the tail before use).
+
+Side finding: with RECOMP_DISPATCH_GATE=1 the game twice stuck on
+"Autoloading Spider-Man saved game data" at boot (same save, after it was
+rewritten at 15:56); with the gate off it loaded. Four earlier gate runs got
+past it. Needs looking at before the gate can stay on (see PORT_NOTES.md).

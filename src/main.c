@@ -528,6 +528,99 @@ static void hang_watch_start(void)
     CloseHandle(CreateThread(NULL, 0, hang_watch_main, NULL, 0, NULL));
 }
 
+/* RECOMP_PEEK=<range>[;<range>...]: watch guest memory and append every
+ * change to peek_log.txt (a full dump whenever a range is (re)found, then
+ * the dwords that changed, old -> new), polled four times a second. A range
+ * is <hex va>:<hex len>, or @<hex va>,<hex off>,...:<hex len> to follow
+ * pointers: read the dword at va, add the next offset, read again ..., and
+ * add the last offset without reading -- @4BC614,11C,1500:100 is
+ * [[0x4BC614]+0x11C]+0x1500. For finding which field a menu choice writes. */
+#define PEEK_MAX 4
+#define PEEK_HOPS 4
+static int peek_resolve(const uint32_t *hop, int nhop, uint32_t *va)
+{
+    uint32_t a = hop[0];
+    int k;
+    for (k = 1; k < nhop; k++) {
+        if (a < 0x10000 || a >= 0x04000000)
+            return 0;
+        a = *(const uint32_t *)((const uint8_t *)g_xbox_mem_offset + a) + hop[k];
+    }
+    if (a < 0x10000 || a >= 0x04000000)
+        return 0;
+    *va = a;
+    return 1;
+}
+
+static DWORD WINAPI peek_main(LPVOID arg)
+{
+    struct { uint32_t hop[PEEK_HOPS + 1], va, len; int nhop, found; uint8_t *last; } r[PEEK_MAX];
+    int n = 0, i;
+    char *spec = _strdup((const char *)arg), *tok, *ctx = NULL;
+    FILE *f = fopen("peek_log.txt", "w");
+    DWORD t0 = GetTickCount();
+
+    if (!f || !spec)
+        return 0;
+    memset(r, 0, sizeof r);
+    for (tok = strtok_s(spec, ";", &ctx); tok && n < PEEK_MAX;
+         tok = strtok_s(NULL, ";", &ctx)) {
+        char *colon = strchr(tok, ':'), *s = tok + (*tok == '@');
+        while (r[n].nhop <= PEEK_HOPS) {
+            char *end;
+            r[n].hop[r[n].nhop++] = strtoul(s, &end, 16);
+            if (*end != ',')
+                break;
+            s = end + 1;
+        }
+        r[n].len = colon ? strtoul(colon + 1, NULL, 16) & ~3u : 0x100;
+        if (r[n].len && r[n].len <= 0x10000 && (r[n].last = calloc(1, r[n].len)))
+            n++;
+    }
+    while (!g_xbox_mem_offset)
+        Sleep(100);
+    Sleep(2000);
+    for (;;) {
+        for (i = 0; i < n; i++) {
+            const uint8_t *p;
+            uint32_t o, va;
+            if (!peek_resolve(r[i].hop, r[i].nhop, &va)) {
+                r[i].found = 0;
+                continue;
+            }
+            p = (const uint8_t *)g_xbox_mem_offset + va;
+            if (!r[i].found || va != r[i].va) {
+                r[i].found = 1;
+                r[i].va = va;
+                memcpy(r[i].last, p, r[i].len);
+                fprintf(f, "== %08X +%X at %lu ms\n", va, r[i].len, GetTickCount() - t0);
+                for (o = 0; o < r[i].len; o += 16)
+                    fprintf(f, "%08X: %08X %08X %08X %08X\n", va + o,
+                            *(uint32_t *)(p + o), *(uint32_t *)(p + o + 4),
+                            *(uint32_t *)(p + o + 8), *(uint32_t *)(p + o + 12));
+                continue;
+            }
+            for (o = 0; o < r[i].len; o += 4) {
+                uint32_t now = *(const uint32_t *)(p + o), was = *(uint32_t *)(r[i].last + o);
+                if (now != was) {
+                    fprintf(f, "%lu ms %08X: %08X -> %08X\n",
+                            GetTickCount() - t0, r[i].va + o, was, now);
+                    *(uint32_t *)(r[i].last + o) = now;
+                }
+            }
+        }
+        fflush(f);
+        Sleep(250);
+    }
+}
+
+static void peek_start(void)
+{
+    const char *e = getenv("RECOMP_PEEK");
+    if (e && *e)
+        CloseHandle(CreateThread(NULL, 0, peek_main, (LPVOID)e, 0, NULL));
+}
+
 static void sampler_start(void)
 {
     const char *e = getenv("RECOMP_SAMPLE");
@@ -690,6 +783,7 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance,
      * does nothing while appearing to be set. */
     xbox_WatchdogStart();
     sampler_start();    /* RECOMP_SAMPLE: profile this thread, see above */
+    peek_start();       /* RECOMP_PEEK: log changes to guest memory */
     hang_watch_start(); /* a frozen picture: every thread's stack, see above */
     {
         extern void text_patch_start(void);

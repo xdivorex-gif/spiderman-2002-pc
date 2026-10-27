@@ -513,6 +513,11 @@ Warehouse Hunt (reference: PC version, youtube.com/watch?v=f9x_5UIrIfQ).
   reports, 0 underruns, median 60.0 flips/s. **Now on:** RECOMP_DISPATCH_GATE=1
   in play.bat, play_drive.bat, play_capture.bat and settings.c's required
   list (launcher starts get it; checked with no switches set).
+  **Regression (same day, not fixed):** with the gate on, two boots in a row
+  stuck on "Autoloading Spider-Man saved game data" (60 fps, no crash; after
+  reading the save the game never lists UDATA again); the same save loaded
+  with RECOMP_DISPATCH_GATE=0. Save backup: cap\nogate\save_backup\. Next:
+  RECOMP_SAMPLE_ALL during the stall to see which thread waits on what.
 - **Next suspect if flicker remains:** polygon offset (depth bias) is not
   passed to back ends at all: NV097 SET_POLY_OFFSET_FILL_ENABLE 0x37C,
   SCALE_FACTOR 0x384, BIAS 0x388 -> add to Nv2aRenderState in
