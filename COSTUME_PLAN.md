@@ -133,7 +133,13 @@ Recommendation: 4b, after 1-3 work.
   from the menus (Level Warp, Start); the Continue path was not seen in a
   run with the hook, so check it next. Note the earlier run where Continue
   into Warehouse Hunt kept the wrestler with Peter on.
-- Next: part 2/3 (pause panel + apply and restart), then part 4b.
+- **Parts 2/3 done (3b, src/costume_panel.c).** Y / Triangle while paused
+  opens a list drawn over the frame; A wears it and restarts the level via
+  the pause menu's Restart Level. Input through the toolkit's pad report
+  filter. Leaving the Goblin clears the game's cached goblin-mode byte
+  (0x4C01E8), which otherwise kept the Goblin's voice lines. Open: the user's
+  very first apply (Peter) logged but did not restart; later ones did.
+- Next: part 4b, the 3D preview in the panel's left half.
 
 ## Checks done (2026-10-27)
 
