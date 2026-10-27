@@ -139,7 +139,17 @@ Recommendation: 4b, after 1-3 work.
   filter. Leaving the Goblin clears the game's cached goblin-mode byte
   (0x4C01E8), which otherwise kept the Goblin's voice lines. Open: the user's
   very first apply (Peter) logged but did not restart; later ones did.
-- Next: part 4b, the 3D preview in the panel's left half.
+- **Part 4b done (3a8bde5).** tools/xbxm.py decodes the hero files (XBXM
+  meshes, DDS textures, stream 2's packed-name directory) and exports
+  previews/<FILE>.hpv; the panel draws the selected hero with a software
+  rasteriser in its left half, turned by L1 / R1 or the right stick.
+  Confirmed by the user: turning works, the model starts facing the camera.
+  Models are in the bind (T) pose; a posed preview would need the game's
+  animation data. Frame-rate cost with the panel open not measured.
+- **All four parts are in.** Open items: the Peter apply that did not
+  restart (seen once), and the dispatch-gate autoload hang (PORT_NOTES.md)
+  -- without the gate the DirectSound voice race crashes, and quick costume
+  restarts hit it (crash in a panel test with the gate off, 0x00340DF3).
 
 ## Checks done (2026-10-27)
 

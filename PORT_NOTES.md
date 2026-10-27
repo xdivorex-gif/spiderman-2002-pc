@@ -518,6 +518,18 @@ Warehouse Hunt (reference: PC version, youtube.com/watch?v=f9x_5UIrIfQ).
   reading the save the game never lists UDATA again); the same save loaded
   with RECOMP_DISPATCH_GATE=0. Save backup: cap\nogate\save_backup\. Next:
   RECOMP_SAMPLE_ALL during the stall to see which thread waits on what.
+  Gate off is not a way out: a costume-panel test with it off crashed in
+  the same DirectSound voice code (fault 0xFFFFFFB4, guest 0x00340DF3 /
+  0x00340E8E) after several quick level restarts.
+
+## Costume selector (2026-10-27)
+
+settings.ini [Game] Costume / launcher list, and a panel over the pause
+menu (Y / Triangle) with a turnable 3D model of each costume: see
+COSTUME_PLAN.md, src/costume_panel.c, tools/xbxm.py (hero file format).
+Previews: `py -3 tools/xbxm.py --export <game_files>/data/heroes previews`
+once, then build. Debug switches: RECOMP_PEEK (main.c, guest memory
+watch), RECOMP_PANEL_DUMP, RECOMP_COSTUME_RESTART.
 - **Next suspect if flicker remains:** polygon offset (depth bias) is not
   passed to back ends at all: NV097 SET_POLY_OFFSET_FILL_ENABLE 0x37C,
   SCALE_FACTOR 0x384, BIAS 0x388 -> add to Nv2aRenderState in
