@@ -518,6 +518,16 @@ Warehouse Hunt (reference: PC version, youtube.com/watch?v=f9x_5UIrIfQ).
   reading the save the game never lists UDATA again); the same save loaded
   with RECOMP_DISPATCH_GATE=0. Save backup: cap\nogate\save_backup\. Next:
   RECOMP_SAMPLE_ALL during the stall to see which thread waits on what.
+  **Cause found, origin not yet:** a thread sample of a stalled boot shows
+  the game thread running normally (frame limiter); the autoload never
+  reads the save. Stalled boots (and only they) call a null function
+  pointer right there: "[ICALL] target 0x00000000 is not code" -- a
+  callback the autoload expects is not set yet: a race the gate's thread
+  ordering exposes. 4 of 6 boots stalled at 17:00; after rebuilding with
+  call-site logging (recomp_icall_not_code_log now prints the return
+  address and stack), 0 of 18. When it stalls again, play_log.txt has the
+  call site: find who sets that pointer. Repro loop: scratch hang_loop.sh
+  (boots with the gate on, samples threads at 80 s).
   Gate off is not a way out: a costume-panel test with it off crashed in
   the same DirectSound voice code (fault 0xFFFFFFB4, guest 0x00340DF3 /
   0x00340E8E) after several quick level restarts.

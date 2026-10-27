@@ -247,6 +247,18 @@ void recomp_icall_not_code_log(uint32_t va)
                     "(null or wild function pointer, at call #%llu)\n",
             va, (unsigned long long)hits[i],
             (unsigned long long)g_icall_count);
+    /* Where from: the call pushed its return address, so the guest stack's
+     * top is the call site, and the words under it its callers' frames. */
+    {
+        extern __declspec(thread) uint32_t g_esp;
+        uint32_t k, sp = g_esp;
+        if (g_xbox_mem_offset && sp > 0x10000 && sp < 0x04000000 - 64) {
+            fprintf(stderr, "[ICALL]   from 0x%08X; stack:", GUEST32(sp));
+            for (k = 1; k < 12; k++)
+                fprintf(stderr, " %08X", GUEST32(sp + 4 * k));
+            fprintf(stderr, "\n");
+        }
+    }
     fflush(stderr);
 }
 
