@@ -249,11 +249,69 @@ void sub_00298400_enter(void)
         if (scale < 1.0f || scale > 4.0f)
             scale = 0.0f;
     }
+    {
+        static int logged;
+        if (logged < 4) {
+            uint32_t was = GUEST32(SM_PROJ_ASPECT_SCALE), fov = GUEST32(g_esp + 4);
+            float f_was, f_fov;
+            memcpy(&f_was, &was, 4);
+            memcpy(&f_fov, &fov, 4);
+            fprintf(stderr, "[WIDE] projection: scale was %.3f, now %.3f, fov arg %.3f\n",
+                    f_was, scale, f_fov);
+            fflush(stderr);
+            logged++;
+        }
+    }
     if (scale > 0.0f) {
         uint32_t bits;
         memcpy(&bits, &scale, 4);
         GUEST32(SM_PROJ_ASPECT_SCALE) = bits;
     }
+}
+
+/*
+ * sub_00012810 is the perspective the game's 3D is drawn with (thiscall:
+ * matrix; fov, aspect, near, far): m00 = 1 / tan(fov * k), k at 0x381C68,
+ * a horizontal field of view; m11 = m00 / aspect, the aspect height over
+ * width (0.75). For Hor+ the vertical scale m11 stays and the horizontal
+ * view widens by RECOMP_HOR_PLUS = F: fov' with tan(fov' k) = F tan(fov k),
+ * aspect' = aspect / F. (sub_00298400 above runs a few times at start.)
+ */
+#include <math.h>
+
+#define SM_PROJ_FOV_K 0x00381C68u
+
+void sub_00012810_enter(void)
+{
+    static float scale = -1.0f;
+    static int logged;
+    uint32_t b;
+    float fov, aspect, k, t;
+
+    if (scale < 0.0f) {
+        const char *e = getenv("RECOMP_HOR_PLUS");
+        scale = e && *e ? (float)atof(e) : 0.0f;
+        if (scale < 1.0f || scale > 4.0f)
+            scale = 0.0f;
+    }
+    if (scale <= 0.0f)
+        return;
+    b = GUEST32(g_esp + 4);  memcpy(&fov, &b, 4);
+    b = GUEST32(g_esp + 8);  memcpy(&aspect, &b, 4);
+    b = GUEST32(SM_PROJ_FOV_K); memcpy(&k, &b, 4);
+    if (!(k > 0.0f) || !(fov > 0.0f) || !(aspect > 0.0f))
+        return;
+    t = tanf(fov * k) * scale;
+    if (logged < 4) {
+        fprintf(stderr, "[WIDE] 3D projection: fov %.2f aspect %.3f -> %.2f %.3f\n",
+                fov, aspect, atanf(t) / k, aspect / scale);
+        fflush(stderr);
+        logged++;
+    }
+    fov = atanf(t) / k;
+    aspect /= scale;
+    memcpy(&b, &fov, 4);    GUEST32(g_esp + 4) = b;
+    memcpy(&b, &aspect, 4); GUEST32(g_esp + 8) = b;
 }
 
 /* The Shocker's tornado and blast (src/shocker_powers.c): a tick on the
