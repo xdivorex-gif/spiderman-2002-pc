@@ -144,9 +144,9 @@ SOURCES = {
     # the dome's start carries no events (its effect follows the animation);
     # his launch's two fire events ended the tornado before it showed
     "ShkTornadoLnch": ("ShkSpinSwavLnch", []),
-    # the jump leaves the ground at the fire event: his crouch is 0.33 s, but
-    # the jump's sound plays on the press (Spider-Man's leaves at 0.03 s)
-    "ShkShockJmpFLnch": ("ShkShockJmpFLnch", [(0.08, FIRE)]),
+    # the jump leaves the ground at the fire event: his own, after the boss's
+    # 0.33 s crouch (0.08 s rushed it)
+    "ShkShockJmpFLnch": ("ShkShockJmpFLnch", None),
     # the landing's sound goes with its step events, as Spider-Man's
     "ShkShockJmpFLnd": ("ShkShockJmpFLnd", [(0.03, 0x200), (0.07, 0x400)]),
     "ShkStandBlastHit": ("ShkStandBlastLoop", [(0.1, STRIKE), (0.35, STRIKE), (0.6, STRIKE)]),
