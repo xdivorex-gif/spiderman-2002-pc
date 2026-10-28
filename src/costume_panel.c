@@ -175,8 +175,12 @@ static int game_paused(void)
 /* RECOMP_COSTUME_RESTART: the presses, comma-separated: up down left right
  * a b x y start back, a count as up*6, and waitN (ms). Pause menu: Audio
  * Options, Restart Level, Options, Combat Controls, Exit to Menu; then
- * "Restart at the beginning of level?" Ok / Cancel. */
-#define RESTART_DEFAULT "wait300,up*6,down,a,wait900,up,a"
+ * "Restart at the beginning of level?" Ok / Cancel. The menu wraps (five
+ * ups are no move at all), so the cursor cannot be sent to the top blind:
+ * B closes the pause menu and Start opens it again, on its first item, and
+ * one down is Restart Level. (up*6,down from Audio Options came back to
+ * Audio Options, and A opened it. Start in the menu is A, not close.) */
+#define RESTART_DEFAULT "wait300,b,wait900,start,wait900,down,a,wait900,up,a"
 #define MAX_STEPS 32
 
 typedef struct { uint8_t dig, ana; unsigned wait_ms; } Step;

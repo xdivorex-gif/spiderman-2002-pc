@@ -161,9 +161,9 @@ TEXT = (
      "  disable_hang\r\n  disable_crawl\r\n"
      # His shock jump is how he gets around instead: jump height goes with
      # the force squared. Defaults (sub_0025A1B0 / its constructor): 20, 15,
-     # 7.5, 12.5.
-     "  jump_force 46.0\r\n  double_jump_force 44.0\r\n"
-     "  jump_xz_move_speed 16.0\r\n  double_jump_xz_move_speed 22.0\r\n"
+     # 7.5, 12.5. 46 / 44 did not clear the skyscrapers.
+     "  jump_force 70.0\r\n  double_jump_force 75.0\r\n"
+     "  jump_xz_move_speed 20.0\r\n  double_jump_xz_move_speed 28.0\r\n"
      # His run animation strides shorter than Spider-Man's sprint; the
      # locomotion base (sub_001F83F0, +0x118) scales movement.
      "  speed_modifier 1.5\r\n"),
