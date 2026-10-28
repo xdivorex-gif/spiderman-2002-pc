@@ -319,7 +319,7 @@ BOLT = [
     (r"\n(\s*)radius [\d.]+", r"\n\1radius 1.0"),
     # A beam crosses a room in a blink; the web ball is a slow homing shot
     # that lives 3-5 s, trailing his effect all the way.
-    (r"launch_force [\d.]+", "launch_force 90.0"),
+    (r"launch_force [\d.]+", "launch_force 60.0"),
     (r"\n(\s*)timer [\d.]+", r"\n\1timer 0.6"),
 ]
 BOLT_ITEMS = ("impact_web.enx", "adv_impact_web.enx")
@@ -331,9 +331,14 @@ SPRAYS = {
     "sprayshkgntsinboltring.ent": {"rate": 20, "life": 0.3, "fadeout": 0.25},
     # the double-arm blast's bar (BOLT_FX)
     "spraysbdshktunnelhead.ent": {"life": 0.6, "fadeout": 0.3},
-    "spraysbdshktunnelwind.ent": {"rate": 60, "life": 0.35, "fadefor": 0, "fadeout": 0.3},
+    # motion 0: the trail stays where it was laid instead of riding along
+    # with the shot, so it draws a streak (at 0.1-0.2 it was a dot flicking
+    # past); offscale widens it
+    "spraysbdshktunnelwind.ent": {"rate": 80, "life": 0.45, "fadefor": 0, "fadeout": 0.4,
+                                  "motion": 0, "offscale": 0.6},
     "sprayshkgntsinboltwavea.ent": {"rate": 10, "life": 0.4, "fadeout": 0.3},
-    "sprayshkgntsinboltwind.ent": {"rate": 60, "life": 0.35, "fadeout": 0.3},
+    "sprayshkgntsinboltwind.ent": {"rate": 80, "life": 0.45, "fadeout": 0.4, "motion": 0,
+                                   "offscale": 0.6},
     "sprayshkgntsinrhitchunk.ent": {"rate": 20, "life": 0.5},
     "sprayshkgntsinrhitfly.ent": {"rate": 10, "life": 0.6, "fadeout": 0.3},
     "sprayshkgntsinrhitrim.ent": {"rate": 8, "life": 0.5, "fadeout": 0.4},
