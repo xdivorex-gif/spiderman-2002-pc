@@ -307,12 +307,12 @@ BOLT_FX, HIT_FX = "shkdblbeam", "shkgntdam"     # shkdblbeam: ENTITIES
 BOLT = [
     (r"visual_entity \w+", "visual_entity " + BOLT_FX),
     (r"\n\s*script spiderman_\w+(launch)\b", r"\n    //script spiderman_\1"),
-    # what it hits: the advanced impact web's explosion, which knocks people
-    # back (the hero's own script, so in every level; grenade_explode needs
-    # an entity only two levels have and crashed), re-skinned as his burst
-    # (ENTITIES), and his burst
-    (r"\n(\s*)script spiderman_\w+?(hit_\w+)",
-     r"\n\1script spiderman_webball_adv_\2\r\n\1effect items\\entities\\%s\r\n\1lifetime 0.5" % HIT_FX),
+    # what it hits: his burst only. No script: grenade_explode needs an
+    # entity only two levels carry (the game could not find it and crashed),
+    # and the advanced web ball's own hit scripts, run from this shot, read
+    # what they expect from an advanced ball and crashed the script engine.
+    (r"\n(\s*)script spiderman_\w+",
+     r"\n\1effect items\\entities\\%s\r\n\1lifetime 0.5" % HIT_FX),
     (r"\n\s*sticky\w*[^\n]*", ""),
     (r"\n\s*preload [^\n]*", ""),
     (r"\n(\s*)damage \d+", r"\n\1damage 50"),
