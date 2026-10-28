@@ -1457,6 +1457,46 @@ static void be_clear(const Nv2aSurface *s, const Nv2aRenderState *rs,
 
 static void be_draw_inner(const Nv2aSurface *s, const Nv2aBatch *b);
 
+/* Widescreen's 2D (RECOMP_HOR_PLUS, settings.c: the screen's width over
+ * 4:3). The 3D is drawn that much wider (Hor+, recomp_manual.c) into the
+ * 640x480 frame stretched to the screen; the HUD and menus, drawn in screen
+ * pixels (every vertex rhw 1), would come out that much wider. Each such
+ * draw to the 640-wide screen is narrowed by the factor round the centre,
+ * the 2D keeping its shape in the middle 4:3 of the screen. All alike:
+ * pinning each draw to its nearest edge pulled apart what is drawn in
+ * pieces (a backdrop's tiles, a box's sides). A single draw across the
+ * whole width (a fade, a flash) is left to cover it. */
+static int hud_widescreen(const Nv2aSurface *s, const Nv2aVertex *v, Nv2aVertex *out, UINT n)
+{
+    static float f = -1.0f;
+    float lo = 1e9f, hi = -1e9f, w = (float)s->width;
+    UINT i;
+
+    if (f < 0.0f) {
+        /* RECOMP_HUD_WIDE=1 while it is worked on: as it is, the menus came
+         * out in uneven strips */
+        const char *e = getenv("RECOMP_HOR_PLUS"), *on = getenv("RECOMP_HUD_WIDE");
+        f = e && *e && on && *on == '1' ? (float)atof(e) : 0.0f;
+        if (f <= 1.0f || f > 4.0f)
+            f = 0.0f;
+    }
+    if (f == 0.0f || s->width != 640 || s->height != 480 || !n)
+        return 0;
+    for (i = 0; i < n; i++) {
+        if (v[i].rhw != 1.0f)
+            return 0;
+        if (v[i].x < lo) lo = v[i].x;
+        if (v[i].x > hi) hi = v[i].x;
+    }
+    if (lo <= 1.0f && hi >= w - 1.0f)
+        return 0;
+    for (i = 0; i < n; i++) {
+        out[i] = v[i];
+        out[i].x = w * 0.5f + (v[i].x - w * 0.5f) / f;
+    }
+    return 1;
+}
+
 static void be_draw(const Nv2aSurface *s, const Nv2aBatch *b)
 {
     LONGLONG t0 = ticks();
@@ -1605,7 +1645,9 @@ static void be_draw_inner(const Nv2aSurface *s, const Nv2aBatch *b)
                                        s_vb_used ? D3D11_MAP_WRITE_NO_OVERWRITE
                                                  : D3D11_MAP_WRITE_DISCARD, 0, &m)))
         return;
-    memcpy((uint8_t *)m.pData + s_vb_used, b->vertices, bytes);
+    if (!hud_widescreen(s, b->vertices, (Nv2aVertex *)((uint8_t *)m.pData + s_vb_used),
+                        bytes / stride))
+        memcpy((uint8_t *)m.pData + s_vb_used, b->vertices, bytes);
     ID3D11DeviceContext_Unmap(s_ctx, (ID3D11Resource *)s_vb, 0);
     if (rc) {
         /* The combiner inputs of the same vertices, in a ring of their own. */

@@ -314,6 +314,47 @@ void sub_00012810_enter(void)
     memcpy(&b, &aspect, 4); GUEST32(g_esp + 8) = b;
 }
 
+/*
+ * The 2D (HUD, menus) is drawn through an orthographic projection
+ * (sub_002982C0 sets it from the 640x480 screen and builds it with
+ * sub_002B0B9B, cdecl: matrix; left, right, bottom, top, near, far). With
+ * the frame stretched to a wider screen it would come out that much wider;
+ * its left and right are pushed out by RECOMP_HOR_PLUS round their centre,
+ * so it is drawn that much narrower and comes out its own shape, in the
+ * middle 4:3 of the screen.
+ */
+void sub_002B0B9B_enter(void)
+{
+    static float scale = -1.0f;
+    static int logged;
+    uint32_t b;
+    float l, r, c;
+
+    if (scale < 0.0f) {
+        const char *e = getenv("RECOMP_HOR_PLUS");
+        scale = e && *e ? (float)atof(e) : 0.0f;
+        if (scale < 1.0f || scale > 4.0f)
+            scale = 0.0f;
+    }
+    /* Off: the projection it builds is -1..1, the full-screen passes'
+     * (effects drawn over the whole frame), not the HUD's; squeezed, the
+     * picture came out wrong. The 2D is placed in gpu_backend.c instead. */
+    if (scale >= 0.0f)
+        return;
+    b = GUEST32(g_esp + 8);  memcpy(&l, &b, 4);
+    b = GUEST32(g_esp + 12); memcpy(&r, &b, 4);
+    if (logged < 4) {
+        fprintf(stderr, "[WIDE] 2D projection: left %.2f right %.2f\n", l, r);
+        fflush(stderr);
+        logged++;
+    }
+    c = (l + r) * 0.5f;
+    l = c + (l - c) * scale;
+    r = c + (r - c) * scale;
+    memcpy(&b, &l, 4); GUEST32(g_esp + 8) = b;
+    memcpy(&b, &r, 4); GUEST32(g_esp + 12) = b;
+}
+
 /* The Shocker's tornado and blast (src/shocker_powers.c): a tick on the
  * game thread from the script engine's entry, and the damage records it
  * turns round. */
