@@ -9,7 +9,8 @@ SUBWAY_D, added under their own names, and Spider-Man's animation list
 (spiderman.ani) and moveset (spiderman.mbo) pointed at them: every
 "anim_file X" / "anim X" naming a Spider-Man file in ANIMS is renamed. The
 two skeletons share bone ids, so the Shocker's animations drive the hero
-rig. Traversal (swinging, crawling, zips, hanging) keeps Spider-Man's.
+rig. No spider powers: swinging, crawling, zips and hanging are switched
+off (TEXT), and his blasts are given strike events (SOURCES) so they hit.
 
 The additions overflow the 4,092,800 bytes aux_xbox.txt reserves for a hero
 package, so the aux_xbox.txt written beside it raises the shockspidey line.
@@ -65,21 +66,68 @@ ANIMS = {
     "SmKPRUpperLnch": "ShkPun2", "SmJmpAirPunHit": "ShkPun2",
     "SmJmpAirKckHit": "ShkPun2",
     # ... three-hit finishers a gauntlet blast ...
-    "SmPPPUpper": "ShkWeakBlast", "SmPPKThrust": "ShkWeakBlast",
-    "SmKKKMuleKck": "ShkWeakBlast", "SmKKPUpper": "ShkWeakBlast",
-    "SmKPPElbo": "ShkWeakBlast", "SmPKKThrust": "ShkWeakBlast",
-    "SmPKWBall": "ShkWeakBlast", "SmPPWFeet": "ShkWeakBlast",
-    "SmKKWCocoon": "ShkWeakBlast",
+    "SmPPPUpper": "ShkWeakBlastHit", "SmPPKThrust": "ShkWeakBlastHit",
+    "SmKKKMuleKck": "ShkWeakBlastHit", "SmKKPUpper": "ShkWeakBlastHit",
+    "SmKPPElbo": "ShkWeakBlastHit", "SmPKKThrust": "ShkWeakBlastHit",
+    "SmPKWBall": "ShkWeakBlastHit", "SmPPWFeet": "ShkWeakBlastHit",
+    "SmKKWCocoon": "ShkWeakBlastHit",
     # ... the strongest the ring blast ...
-    "SmPKP": "ShkShkwavRng", "SmKPK": "ShkShkwavRng", "SmKJp": "ShkShkwavRng",
+    "SmPKP": "ShkRingHit", "SmKPK": "ShkRingHit", "SmKJp": "ShkRingHit",
     # ... jump finishers the spin blast ...
-    "SmPKJ_Palm": "ShkSpinSwavBlst", "SmPPJFrog": "ShkSpinSwavBlst",
-    "SmKPJ": "ShkSpinSwavBlst", "SmKKJFlipMule": "ShkSpinSwavBlst",
-    "SmPJP": "ShkSpinSwavBlst", "SmPJK": "ShkSpinSwavBlst",
-    "SmKJJtackle": "ShkSpinSwavBlst", "SmKJKHandSpring": "ShkSpinSwavBlst",
+    "SmPKJ_Palm": "ShkSpinHit", "SmPPJFrog": "ShkSpinHit",
+    "SmKPJ": "ShkSpinHit", "SmKKJFlipMule": "ShkSpinHit",
+    "SmPJP": "ShkSpinHit", "SmPJK": "ShkSpinHit",
+    "SmKJJtackle": "ShkSpinHit", "SmKJKHandSpring": "ShkSpinHit",
     # ... and the uppercuts the weak ring jump.
-    "SmJmpUpper": "ShkShockJmp", "SmJmpKnee": "ShkShockJmp", "SmPJJ": "ShkShockJmp",
+    "SmJmpUpper": "ShkShockJmpHit", "SmJmpKnee": "ShkShockJmpHit",
+    "SmPJJ": "ShkShockJmpHit",
 }
+
+# An animation ends with its events: (seconds, flag) pairs, offset at +0x4C.
+# 0x100 is the strike (a combo move hits what its limbs touch then), 0x20 the
+# fire / launch point (web shots leave, jumps take off). His blasts carry no
+# strikes, so as combo finishers they hit nothing; these copies add them.
+# name: (Shocker animation in SUBWAY_D, events or None to keep his own)
+STRIKE, FIRE = 0x100, 0x20
+SOURCES = {
+    "ShkWeakBlastHit": ("ShkWeakBlast", [(0.3, STRIKE)]),
+    "ShkRingHit": ("ShkShkwavRng", [(0.5, STRIKE), (2.47, STRIKE)]),
+    "ShkSpinHit": ("ShkSpinSwavBlst", [(0.2, STRIKE), (0.45, STRIKE)]),
+    "ShkShockJmpHit": ("ShkShockJmp", [(0.3, STRIKE), (1.07, STRIKE)]),
+    # his own fires at 0.0, which a web shot never reaches
+    "ShkWeakBlast": ("ShkWeakBlast", [(0.25, FIRE)]),
+}
+
+# Text edits: (entry, old, new). No spider powers: the Goblin's package turns
+# traversal off the same way (plrgoblin_enx.inc).
+TEXT = (
+    ("spiderman_new.ai", "  type spiderman\r\n",
+     "  type spiderman\r\n  disable_zip\r\n  disable_swing\r\n"
+     "  disable_hang\r\n  disable_crawl\r\n"),
+    # The web weapons: fields of the hero's spidermanX goal, read by the same
+    # parser as head_icon (sub_00244FC0: web_tie +0xCF ... web_yank +0xD7).
+    ("shockspidey.enx", "      head_icon",
+     "".join("      %s 0\r\n" % k for k in (
+         "web_tie_enabled", "web_spikes_enabled", "adv_web_spikes_enabled",
+         "web_dome_enabled", "adv_web_dome_enabled", "impact_web_enabled",
+         "adv_impact_web_enabled", "web_laser_enabled", "web_yank_enabled",
+         "swing_attack_enabled"))
+     + "      head_icon"),
+)
+
+
+def set_events(anim, events):
+    """The animation with its event list replaced."""
+    import struct
+    end = struct.unpack_from("<I", anim, 0x4C)[0] or len(anim)
+    out = bytearray(anim[:end])
+    out.extend(bytes(-len(out) % 4))
+    at = len(out)
+    out += struct.pack("<4I", 0, 1, len(events), 0)
+    for t, flag in events:
+        out += struct.pack("<fI", t, flag)
+    struct.pack_into("<I", out, 0x4C, at)
+    return bytes(out)
 
 
 def rename(text, keyword):
@@ -99,13 +147,20 @@ def main(out_dir):
     hero = xbs.Package(os.path.join(GAME, "heroes", "SHOCKSPI.xbs"))
     boss = xbs.Package(os.path.join(GAME, "levels", "SUBWAY_D.xbs"))
     for shk in sorted(set(ANIMS.values())):
-        data = boss.data(shk.lower() + ".anml")
-        assert data[:4] == b"ANMX", shk
+        src, events = SOURCES.get(shk, (shk, None))
+        data = boss.data(src.lower() + ".anml")
+        assert data[:4] == b"ANMX", src
+        if events is not None:
+            data = set_events(data, events)
         hero.put(shk.lower() + ".anml", data, xbs.TYPE_ANML)
     for name, keyword in (("spiderman.ani", "anim_file"), ("spiderman.mbo", "anim")):
         text, n = rename(hero.data(name).decode("latin1"), keyword)
         hero.put(name, text.encode("latin1"))
         print("%s: %d animations renamed" % (name, n))
+    for name, old, new in TEXT:
+        text = hero.data(name).decode("latin1")
+        assert text.count(old) == 1, (name, old)
+        hero.put(name, text.replace(old, new).encode("latin1"))
     print("%d Shocker animations; stream 0 %d bytes, reserved %d"
           % (len(set(ANIMS.values())), len(hero.s0), BUDGET))
     assert len(hero.s0) <= BUDGET

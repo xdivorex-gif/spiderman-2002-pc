@@ -183,6 +183,26 @@ file-redirect hook. Step 4 is iterative tuning in game. Step 6 is open-ended.
   shockspidey line to 6,000,000, and the level loads and plays with it.
   Done before step 2 (his body), which is still Spider-Man's in the
   shockspidey suit.
+- **No spider powers (2026-10-28, the user's call: an authentic Shocker).**
+  Traversal is off the way the Goblin's package does it
+  (`plrgoblin_enx.inc`): `disable_zip`, `disable_swing`, `disable_hang`,
+  `disable_crawl` in the `locomotion:` block (`spiderman_new.ai`). The web
+  weapons are fields of the hero's `spidermanX` goal, read by the same
+  parser as `head_icon` (`sub_00244FC0`): `web_tie_enabled` +0xCF,
+  `web_spikes_enabled` +0xD0, `adv_web_spikes` +0xD1, `web_dome` +0xD2,
+  `adv_web_dome` +0xD3, `impact_web` +0xD4, `adv_impact_web` +0xD5,
+  `web_laser` +0xD6, `web_yank` +0xD7, `swing_attack` +0xD9 (and costs,
+  damage, durations from +0x318). Set to 0 in `shockspidey.enx`; whether the
+  game's unlock list (`ENABLE_IMPACT_WEB`…) turns them back on at level
+  start is to be checked in play. If it does, a host hook can clear those
+  bytes.
+- **Animation events.** An ANMX ends with an event list (offset at +0x4C:
+  0, 1, count, 0, then (float seconds, flag) pairs). 0x100 = strike (a
+  combo move hits what its limbs touch), 0x20 = fire / launch, 0x200 /
+  0x400 = footsteps. His blasts carry no strikes, so as combo finishers they
+  hit nothing; the build adds copies with strikes (`ShkWeakBlastHit`,
+  `ShkRingHit`, `ShkSpinHit`, `ShkShockJmpHit`). These are melee-range
+  hits: a ranged gauntlet blast needs the projectile work of step 4.
 - The overlay folder is only used with PlayStation prompts (`pc_ps`); with
   Xbox prompts it is `overlay\pc`. Step 5 replaces this with a proper
   redirect.
