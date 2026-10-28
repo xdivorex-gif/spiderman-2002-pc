@@ -50,12 +50,14 @@ ANIMS = {
     "SmProneF": "ShkDOnF",
     "SmGetUB": "ShkGetUB",
     "SmBlowFGetU": "ShkGetUF",
-    # web weapons: impact web = weak blast, dome = ring blast, gloves = charge
-    "SmImpactWeb": "ShkWeakBlast",
-    "SmImpactWebADV": "ShkWeakBlast",
-    "SmIdl2ShieldDome": "ShkStandBlastChrg",
-    "SmShieldDomeIdl": "ShkStandBlastLoop",
-    "SmShieldDome2Idl": "ShkStandBlast2Idl",
+    # web weapons (L2 + a face button, src/shocker_input.c): impact web =
+    # his double-arm blast, dome = his tornado (the spin shockwave's launch,
+    # spin and landing), gloves = charge
+    "SmImpactWeb": "ShkDblBlast",
+    "SmImpactWebADV": "ShkDblBlast",
+    "SmIdl2ShieldDome": "ShkSpinSwavLnch",
+    "SmShieldDomeIdl": "ShkSpinSwavBlst",
+    "SmShieldDome2Idl": "ShkSpinSwavLnd",
     "SmCreateWebSpikeHn": "ShkStandBlastChrg",
     "SmCreateWebSpikeAdv": "ShkStandBlastChrg",
     # combos: the punch button is his shock punch ...
@@ -136,6 +138,8 @@ SOURCES = {
     "ShkShockJmpHit": ("ShkShockJmp", [(0.3, STRIKE), (1.07, STRIKE)]),
     # his own fires at 0.0, which a web shot never reaches
     "ShkWeakBlast": ("ShkWeakBlast", [(0.25, FIRE)]),
+    # both arms out: the bolt leaves as the arms reach full stretch
+    "ShkDblBlast": ("ShkStandBlastLoop", [(0.25, FIRE)]),
     # the jump leaves the ground at the fire event: his crouch is 0.33 s
     "ShkShockJmpFLnch": ("ShkShockJmpFLnch", [(0.2, FIRE)]),
     "ShkStandBlastHit": ("ShkStandBlastLoop", [(0.1, STRIKE), (0.35, STRIKE), (0.6, STRIKE)]),

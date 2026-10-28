@@ -3,25 +3,27 @@
  *
  * His blasts are Spider-Man's web specials re-skinned (tools/shocker_build.py):
  * the web button (Y; Triangle on a PlayStation pad) with a direction of the
- * left stick, as the pause menu's Combat Controls lists them:
+ * d-pad, as the pause menu's Combat Controls lists them:
  *
- *   L2 + Square    Y + up      impact web    -> his gauntlet bolt
- *   L2 + Triangle  Y + right   web dome      -> his ring blast (twice: strong)
- *   L2 + Circle    Y + down    web yank      -> his electric yank, and its
- *                                               cowboy spin his tornado
+ *   L2 + Square    Y + up      impact web    -> his double-arm blast
+ *   L2 + Triangle  Y + right   web dome      -> his tornado
+ *   L2 + Circle    Y + down    web yank      -> his electric yank
  *   L2 + Cross     Y + left    web gloves    -> his charged gauntlets
  *
  * Only while the Shocker is worn (costume_worn_index). L2 -- the left
  * trigger, analog byte 6 of the report -- is kept from the game while held;
  * a short tap with no face button is passed on afterwards, so what L2 does
- * in the game still works. A press is played as the web button held, the
- * stick pushed to the direction a moment later, then both let go.
+ * in the game still works. A press is played as a hand does it (recorded
+ * with RECOMP_PAD_RECORD): the d-pad direction, the web button 30 ms
+ * later, both held about half a second.
  *
  * Called from costume_panel.c's report filter (there is one filter), on the
  * USB thread, for pad 0, while the game is not paused.
  */
 #include <windows.h>
 #include <stdint.h>
+#include <stdio.h>
+#include <stdlib.h>
 #include <string.h>
 
 int costume_worn_index(void);
@@ -35,36 +37,67 @@ int costume_worn_index(void);
 #define AN_LT 6
 #define HELD(r, i) ((r)[4 + (i)] > 0x40)
 
-/* The web button first and the direction while it is held ("Triangle +
- * right"). Direction first turned him to face it, so every combo came out
- * as a plain shot ahead. */
-#define WEB_MS     260              /* the web button, from the start */
-#define STICK_FROM 60               /* the direction, from .. to */
-#define STICK_TO   240
+/* The d-pad, not the stick: the stick only turned or walked him. */
+#define PAD_MS   500                /* the d-pad direction, from the start */
+#define WEB_FROM 30                 /* the web button, from .. to */
+#define WEB_TO   500
 #define TAP_MS   250                /* a shorter L2 hold with no blast is a tap */
 #define PULSE_MS 100
 
-static const struct { int face; int16_t x, y; } s_map[] = {
-    { AN_X,  0,      32767 },       /* Square:   up    */
-    { AN_Y,  32767,  0     },       /* Triangle: right */
-    { AN_B,  0,     -32767 },       /* Circle:   down  */
-    { AN_A, -32767,  0     },       /* Cross:    left  */
+#define DPAD_UP    0x01             /* report byte 2 */
+#define DPAD_DOWN  0x02
+#define DPAD_LEFT  0x04
+#define DPAD_RIGHT 0x08
+
+static const struct { int face; uint8_t dpad; } s_map[] = {
+    { AN_X, DPAD_UP    },           /* Square   */
+    { AN_Y, DPAD_RIGHT },           /* Triangle */
+    { AN_B, DPAD_DOWN  },           /* Circle   */
+    { AN_A, DPAD_LEFT  },           /* Cross    */
 };
 
 static int s_lt_down, s_used, s_prev_face[4];
 static DWORD s_lt_t0, s_macro_t0, s_pulse_t0;
 static int s_macro = -1, s_pulse;
 
-static void put_stick(uint8_t *r, int16_t x, int16_t y)
+/* RECOMP_PAD_RECORD=1: each change of the pad as the game gets it, to
+ * stderr: buttons held and the left stick's direction, with the time --
+ * to copy how a special is pressed by hand. */
+static void record(const uint8_t *r)
 {
-    memcpy(r + 12, &x, 2);
-    memcpy(r + 14, &y, 2);
+    static int on = -1;
+    static char last[64];
+    static DWORD t0;
+    char now[64];
+    int16_t x, y;
+    if (on < 0) {
+        const char *e = getenv("RECOMP_PAD_RECORD");
+        on = e && *e && *e != '0';
+        t0 = GetTickCount();
+    }
+    if (!on)
+        return;
+    memcpy(&x, r + 12, 2);
+    memcpy(&y, r + 14, 2);
+    _snprintf(now, sizeof now, "%s%s%s%s%s%s dpad=%X stick=%s%s",
+              HELD(r, AN_A) ? "A" : "-", HELD(r, AN_B) ? "B" : "-",
+              HELD(r, AN_X) ? "X" : "-", HELD(r, AN_Y) ? "Y" : "-",
+              HELD(r, AN_LT) ? "L" : "-", HELD(r, 7) ? "R" : "-", r[2] & 0xF,
+              y > 12000 ? "U" : y < -12000 ? "D" : "", x > 12000 ? "R" : x < -12000 ? "L" : "");
+    now[sizeof now - 1] = 0;
+    if (strcmp(now, last)) {
+        fprintf(stderr, "[PAD] %6lu %s\n", GetTickCount() - t0, now);
+        strcpy(last, now);
+    }
 }
 
 void shocker_input_filter(uint8_t *r)
 {
     DWORD t = GetTickCount();
-    int lt = HELD(r, AN_LT), k;
+    int lt, k;
+
+    record(r);
+    lt = HELD(r, AN_LT);
 
     if (costume_worn_index() != SHOCKER_INDEX) {
         s_lt_down = 0;
@@ -103,11 +136,10 @@ void shocker_input_filter(uint8_t *r)
 
     if (s_macro >= 0) {
         DWORD dt = t - s_macro_t0;
-        if (dt < WEB_MS) {
-            r[4 + AN_Y] = 0xFF;
-            put_stick(r, 0, 0);
-            if (dt >= STICK_FROM && dt < STICK_TO)
-                put_stick(r, s_map[s_macro].x, s_map[s_macro].y);
+        if (dt < PAD_MS) {
+            r[2] = (uint8_t)((r[2] & ~0x0F) | s_map[s_macro].dpad);
+            if (dt >= WEB_FROM && dt < WEB_TO)
+                r[4 + AN_Y] = 0xFF;
         } else {
             s_macro = -1;
         }
