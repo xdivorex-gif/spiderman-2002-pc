@@ -57,6 +57,18 @@ enum { DIR_KEEP, DIR_IN, DIR_ALONG };
 static volatile DWORD s_tornado_at, s_blast_at;
 static int s_dir_mode, s_busy;
 static uint32_t s_along[3];         /* DIR_ALONG: the direction, float bits */
+static int s_caught;                /* blasts made in this file's calls */
+
+/* RECOMP_GAME_LOG: the double-arm blast's geometry and what it caught. */
+static int log_on(void)
+{
+    static int on = -1;
+    if (on < 0) {
+        const char *e = getenv("RECOMP_GAME_LOG");
+        on = e && *e && *e != '0';
+    }
+    return on;
+}
 
 void shocker_powers_tornado(void) { s_tornado_at = GetTickCount(); }
 void shocker_powers_blast(void)   { s_blast_at = GetTickCount(); }
@@ -160,9 +172,19 @@ static void blast_hit(uint32_t world, uint32_t hero)
     s_along[0] = fbits(fx);
     s_along[1] = fbits(0.0f);
     s_along[2] = fbits(fz);
-    for (k = 0; k < (int)(sizeof s_blast_at_m / sizeof s_blast_at_m[0]); k++)
+    if (log_on())
+        fprintf(stderr, "[SHOCKER] blast: pos %.2f %.2f %.2f  row0 %.2f %.2f %.2f  row1 %.2f %.2f %.2f"
+                "  row2 %.2f %.2f %.2f\n", x, y, z,
+                gfloat(pos - 0x30), gfloat(pos - 0x2C), gfloat(pos - 0x28),
+                gfloat(pos - 0x20), gfloat(pos - 0x1C), gfloat(pos - 0x18),
+                gfloat(pos - 0x10), gfloat(pos - 0x0C), gfloat(pos - 0x08));
+    for (k = 0; k < (int)(sizeof s_blast_at_m / sizeof s_blast_at_m[0]); k++) {
+        s_caught = 0;
         radius_damage(world, x + fx * s_blast_at_m[k][0], y + 1.0f, z + fz * s_blast_at_m[k][0],
                       s_blast_at_m[k][1], BLAST_DAMAGE, DIR_ALONG);
+        if (log_on())
+            fprintf(stderr, "[SHOCKER]   %.0f m ahead: %d caught\n", s_blast_at_m[k][0], s_caught);
+    }
 }
 
 /* The script engine's entry (sub_00051C00_enter, recomp_manual.c): the
@@ -214,6 +236,7 @@ void shocker_powers_damage_record(void)
     dir = GUEST32(g_esp + 12);
     if (!dir || dir >= 0x04000000)
         return;
+    s_caught++;
     for (k = 0; k < 3; k++) {
         if (s_dir_mode == DIR_IN)
             GUEST32(dir + 4 * k) ^= 0x80000000u;
