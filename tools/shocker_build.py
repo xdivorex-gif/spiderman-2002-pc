@@ -405,9 +405,10 @@ SLOTS = {
     "weblaunch_advanced": "sh_gauntlet_blast", "smaiv059": "sh_gauntlet_blast",
     "smaiv060": "sh_gauntlet_blast", "smaiv061": "sh_gauntlet_blast",
     "smaiv062": "sh_gauntlet_blast",
-    # what lands: his gauntlet hit
+    # what his blasts hit: his gauntlet hit. Not punch_sm / punch_sm2: every
+    # blow that lands plays them, and his short electric crack there sounded
+    # broken.
     "webimpact": "sh_gauntlet_hit", "weblaunch_advanced_explo": "sh_gauntlet_hit",
-    "punch_sm": "sh_gauntlet_hit", "punch_sm2": "sh_gauntlet_hit",
     # the dome is his tornado, its burst his strong ring; landing his weak ring
     "webdome": "sh_tornado", "webdome2": "sh_tornado", "webbust": "sh_strongring",
     "sm_landing": "sh_weakring",
