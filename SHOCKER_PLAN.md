@@ -244,6 +244,18 @@ file-redirect hook. Step 4 is iterative tuning in game. Step 6 is open-ended.
   ground at 0.2 s (fire event) instead of his 0.33 s crouch. The engine
   names no jump or landing effect, so a ground wave on landing would need
   host code.
+- **More moves, higher jump, faster run (2026-10-28).** Kick button = his
+  gauntlet blast (`ShkWeakBlastHit`), three kicks = his standing blast
+  (`ShkStandBlastHit`), air kick = shock blast (`ShkShockJmpHit`), dodges and
+  rolls = spin blast with strikes, one-arm web fire = his one-arm blasts,
+  web yank back on: fire = blast, pull = blast release, lasso = spin, the
+  line drawn with his lightning (`spideywebstring*` replaced by
+  `lightninga0x` converted DXT1 -> DXT5, alpha = brightness). Jump 46 /
+  double 44 (about 5x Spider-Man's height), air speed 16 / 22, and
+  `speed_modifier 1.5` (locomotion base `sub_001F83F0` +0x118) for his
+  shorter run stride. Gauntlet aura: the boss's always-on `TRAILR`/`TRAILL`
+  hand trails added under the hero's hand bones (a bone's data closes with
+  two chunkends; children follow).
 - **Sound.** Level banks are `xboxsound\<lang>\<level>.XSH` (count at +4,
   0x60-byte entries, name at +0x0C) indexing `.XSD` sample data. His sounds
   (`sh_gauntlet_blast`, `sh_gauntlet_hit`, `sh_weakring`, `sh_strongring`,

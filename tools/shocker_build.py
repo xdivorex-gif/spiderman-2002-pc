@@ -17,6 +17,7 @@ package, so the aux_xbox.txt written beside it raises the shockspidey line.
 """
 import os
 import re
+import struct
 import sys
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
@@ -57,17 +58,21 @@ ANIMS = {
     "SmShieldDome2Idl": "ShkStandBlast2Idl",
     "SmCreateWebSpikeHn": "ShkStandBlastChrg",
     "SmCreateWebSpikeAdv": "ShkStandBlastChrg",
-    # combos: single hits are his shock punch (he has no kicks) ...
+    # combos: the punch button is his shock punch ...
     "SmPHookR": "ShkPun2", "SmCrchPunR": "ShkPun2", "SmCrchPunL": "ShkPun2",
     "SmPPCrossL": "ShkPun2", "SmPunLSideJab": "ShkPun2", "SmPunR": "ShkPun2",
-    "SmPunBckElbo": "ShkPun2", "SmKSideKck": "ShkPun2", "SmKKGutKck": "ShkPun2",
-    "SmKckLSide": "ShkPun2", "SmKckRSide": "ShkPun2",
-    "SmKckDualBckKck": "ShkPun2", "SmPK_Punt": "ShkPun2",
+    "SmPunBckElbo": "ShkPun2", "SmPK_Punt": "ShkPun2",
     "SmKPRUpperLnch": "ShkPun2", "SmJmpAirPunHit": "ShkPun2",
-    "SmJmpAirKckHit": "ShkPun2",
+    # ... the kick button (he has no kicks) a short gauntlet blast, three
+    # kicks his standing blast, a kick in the air his shock blast down ...
+    "SmKSideKck": "ShkWeakBlastHit", "SmKKGutKck": "ShkWeakBlastHit",
+    "SmKckLSide": "ShkWeakBlastHit", "SmKckRSide": "ShkWeakBlastHit",
+    "SmKckDualBckKck": "ShkWeakBlastHit",
+    "SmKKKMuleKck": "ShkStandBlastHit",
+    "SmJmpAirKckHit": "ShkShockJmpHit",
     # ... three-hit finishers a gauntlet blast ...
     "SmPPPUpper": "ShkWeakBlastHit", "SmPPKThrust": "ShkWeakBlastHit",
-    "SmKKKMuleKck": "ShkWeakBlastHit", "SmKKPUpper": "ShkWeakBlastHit",
+    "SmKKPUpper": "ShkWeakBlastHit",
     "SmKPPElbo": "ShkWeakBlastHit", "SmPKKThrust": "ShkWeakBlastHit",
     "SmPKWBall": "ShkWeakBlastHit", "SmPPWFeet": "ShkWeakBlastHit",
     "SmKKWCocoon": "ShkWeakBlastHit",
@@ -81,6 +86,18 @@ ANIMS = {
     # ... and the uppercuts the weak ring jump.
     "SmJmpUpper": "ShkShockJmpHit", "SmJmpKnee": "ShkShockJmpHit",
     "SmPJJ": "ShkShockJmpHit",
+    # dodges and rolls are his spin blast (it strikes on the way)
+    "SmDodgeF": "ShkSpinHit", "SmDodgeB": "ShkSpinHit",
+    "SmRollL": "ShkSpinHit", "SmRollR": "ShkSpinHit",
+    # one-arm web fire (partial, arm only): his one-arm gauntlet blasts
+    "SmRArmWebFire": "ShkRArmBlst", "SmLArmWebFire": "ShkLArmBlst",
+    # web yank: the shot is a blast, the pull his blast release, the lasso
+    # his spin; the line itself is lightning (TEXTURES)
+    "SmWebYankFire": "ShkYankFire", "SmCrchWebYankFireL": "ShkYankFire",
+    "SmWebYankB": "ShkYankPull", "SmWebYankU": "ShkYankPull",
+    "SmWebYankL": "ShkYankPull", "SmWebYankR": "ShkYankPull",
+    "SmCrchWebYankB": "ShkYankPull", "SmCrchWebYankR": "ShkYankPull",
+    "SmWebCowboy": "ShkSpinSwavBlst",
 }
 
 # An animation ends with its events: (seconds, flag) pairs, offset at +0x4C.
@@ -98,6 +115,19 @@ SOURCES = {
     "ShkWeakBlast": ("ShkWeakBlast", [(0.25, FIRE)]),
     # the jump leaves the ground at the fire event: his crouch is 0.33 s
     "ShkShockJmpFLnch": ("ShkShockJmpFLnch", [(0.2, FIRE)]),
+    "ShkStandBlastHit": ("ShkStandBlastLoop", [(0.1, STRIKE), (0.35, STRIKE), (0.6, STRIKE)]),
+    # the yank's line leaves and pulls at Spider-Man's moments
+    "ShkYankFire": ("ShkWeakBlast", [(0.13, FIRE)]),
+    "ShkYankPull": ("ShkStandBlast2Idl", [(-0.03, FIRE)]),
+}
+
+# Textures replaced by the Shocker's art: hero texture -> (level package,
+# texture). The yank's line (spideywebstring*, drawn by the engine) becomes
+# his lightning; it is DXT1 without alpha, so its brightness becomes alpha.
+TEXTURES = {
+    "spideywebstring": ("SUBWAY_D", "lightninga04"),
+    "spideywebstringb": ("SUBWAY_D", "lightninga01"),
+    "spideywebstringc": ("SUBWAY_D", "lightninga02"),
 }
 
 # Text edits: (entry, old, new). No spider powers: the Goblin's package turns
@@ -109,8 +139,11 @@ TEXT = (
      # His shock jump is how he gets around instead: jump height goes with
      # the force squared. Defaults (sub_0025A1B0 / its constructor): 20, 15,
      # 7.5, 12.5.
-     "  jump_force 34.0\r\n  double_jump_force 30.0\r\n"
-     "  jump_xz_move_speed 11.0\r\n  double_jump_xz_move_speed 16.0\r\n"),
+     "  jump_force 46.0\r\n  double_jump_force 44.0\r\n"
+     "  jump_xz_move_speed 16.0\r\n  double_jump_xz_move_speed 22.0\r\n"
+     # His run animation strides shorter than Spider-Man's sprint; the
+     # locomotion base (sub_001F83F0, +0x118) scales movement.
+     "  speed_modifier 1.5\r\n"),
     # The web weapons: fields of the hero's spidermanX goal, read by the same
     # parser as head_icon (sub_00244FC0: web_tie +0xCF ... web_yank +0xD7).
     # The impact web stays on: it becomes his gauntlet bolt (BOLT below).
@@ -118,8 +151,7 @@ TEXT = (
     # (ENTITIES below).
     ("shockspidey.enx", "      head_icon",
      "".join("      %s 0\r\n" % k for k in (
-         "web_tie_enabled", "web_laser_enabled", "web_yank_enabled",
-         "swing_attack_enabled"))
+         "web_tie_enabled", "web_laser_enabled", "swing_attack_enabled"))
      + "      head_icon"),
 )
 
@@ -279,6 +311,43 @@ def copy_effects(hero, src, roots):
     return sorted(found)
 
 
+def dxt5_from_brightness(dds):
+    """A DXT1 texture as DXT5 with alpha = brightness (glowing art on
+    black), so it blends where the original had alpha."""
+    import hud_upscale as hu
+    h, w = struct.unpack_from("<II", dds, 12)
+    px = hu.decode_dxt(dds[128:], w, h, dds[84:88])
+    out = bytearray()
+    for by in range(0, h, 4):
+        for bx in range(0, w, 4):
+            blk = [px[(by + t // 4) * w + bx + t % 4] for t in range(16)]
+            rgb = [((p >> 16) & 255, (p >> 8) & 255, p & 255) for p in blk]
+            alpha = [max(c) for c in rgb]
+            a0, a1 = max(alpha), min(alpha)
+            levels = [a0, a1] + [((7 - i) * a0 + i * a1) // 7 for i in range(1, 7)] \
+                if a0 > a1 else [a0, a1, a0, a0, a0, a0, 0, 255]
+            bits = 0
+            for t, a in enumerate(alpha):
+                bits |= min(range(8), key=lambda i: abs(levels[i] - a)) << (3 * t)
+            out += bytes((a0, a1)) + bits.to_bytes(6, "little")
+            def c565(c):
+                return (c[0] * 31 // 255) << 11 | (c[1] * 63 // 255) << 5 | (c[2] * 31 // 255)
+            hi = max(rgb, key=sum)
+            lo = min(rgb, key=sum)
+            e0, e1 = c565(hi), c565(lo)
+            ends = [hi, lo, tuple((2 * a + b) // 3 for a, b in zip(hi, lo)),
+                    tuple((a + 2 * b) // 3 for a, b in zip(hi, lo))]
+            idx = 0
+            for t, c in enumerate(rgb):
+                i = min(range(4), key=lambda k: sum((x - y) ** 2 for x, y in zip(c, ends[k])))
+                idx |= i << (2 * t)
+            out += struct.pack("<HHI", e0, e1, idx)
+    hdr = bytearray(dds[:128])
+    hdr[84:88] = b"DXT5"
+    struct.pack_into("<I", hdr, 20, len(out))      # linear size
+    return bytes(hdr) + bytes(out)
+
+
 def set_events(anim, events):
     """The animation with its event list replaced."""
     import struct
@@ -339,6 +408,29 @@ def main(out_dir):
         hero.put(name, text.encode("latin1"))
     fx = copy_effects(hero, boss, roots)
     print("effects: %d entries copied" % len(fx))
+    # His gauntlets' blue aura: the boss's TRAILR / TRAILL, particle trails
+    # under his hand bones that are always on (his ELEC / RING / STAR nodes
+    # are hidden until the boss scripts show them), put under the hero's.
+    boss_ent = boss.data("shocker.ent").decode("latin1")
+    ent = hero.data("shockspidey.ent").decode("latin1")
+    for side in "RL":
+        node = re.search(r'node\r?\n"TRAIL%s".*?chunkend\r?\nchunkend\r?\n' % side,
+                         boss_ent, re.S).group(0).replace("\r\n", "\n").replace("\n", "\r\n")
+        # a bone's data closes with two chunkends; its children follow
+        hand = re.search(r'"BIP01 %s HAND"\r\nanimid\r\n"%s_HAND"\r\npo\r\n[^\r\n]*\r\nentity\r\nbone\r\n\d+\r\nchunkend\r\nchunkend\r\n'
+                         % (side, side), ent)
+        ent = ent[:hand.end()] + node + ent[hand.end():]
+        roots.append("sprayshkhandtrail")
+    hero.put("shockspidey.ent", ent.encode("latin1"))
+    copy_effects(hero, boss, ["sprayshkhandtrail"])
+    levels = {}
+    for name, (level, src) in TEXTURES.items():
+        if level not in levels:
+            levels[level] = xbs.Package(os.path.join(GAME, "levels", level + ".xbs"))
+        dds = levels[level].data(src + ".dds")
+        if dds[84:88] == b"DXT1":
+            dds = dxt5_from_brightness(dds)
+        hero.put(name + ".dds", dds, xbs.TYPE_DDS, align=0x1000)
     # motion trails: his gauntlets' blue-white glow instead of gold and brown
     text = hero.data("shockspidey.enx").decode("latin1")
     for part, rgb in TRAILS.items():
