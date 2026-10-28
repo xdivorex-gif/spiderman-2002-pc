@@ -44,7 +44,8 @@ checked on screen). tools\hud_upscale.py --legal upscales the tiles as one
 picture (no seams) and the font x4 into the pack. text_patch.c's in-memory
 swap of that paragraph stays as a fallback when the overlay is off.
 
-**HUD art upscaled (2026-10-28):** tools\hud_upscale.py finds the head icons
+**HUD art upscaled (2026-10-28):** tools\hud_upscale.py finds the health bar
+(e_healthbar*: the ring round the head, the frame, the glider bar), the head icons
 next to the health bar (ib_*, 45 of them, each hero's head_icon and stealth
 variant plus the bosses'), the compass (compass_*, compas_*, e_compass_bace)
 and the height meter (altimiter*, alt_*) in every package, decodes them with
