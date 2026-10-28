@@ -52,7 +52,7 @@ ANIMS = {
     # web weapons: impact web = weak blast, dome = ring blast, gloves = charge
     "SmImpactWeb": "ShkWeakBlast",
     "SmImpactWebADV": "ShkWeakBlast",
-    "SmIdl2ShieldDome": "ShkShkwavRng",
+    "SmIdl2ShieldDome": "ShkStandBlastChrg",
     "SmShieldDomeIdl": "ShkStandBlastLoop",
     "SmShieldDome2Idl": "ShkStandBlast2Idl",
     "SmCreateWebSpikeHn": "ShkStandBlastChrg",
@@ -107,13 +107,59 @@ TEXT = (
     # The web weapons: fields of the hero's spidermanX goal, read by the same
     # parser as head_icon (sub_00244FC0: web_tie +0xCF ... web_yank +0xD7).
     # The impact web stays on: it becomes his gauntlet bolt (BOLT below).
+    # The dome and gloves stay on too: his ring blast and charged gauntlets
+    # (ENTITIES below).
     ("shockspidey.enx", "      head_icon",
      "".join("      %s 0\r\n" % k for k in (
-         "web_tie_enabled", "web_spikes_enabled", "adv_web_spikes_enabled",
-         "web_dome_enabled", "adv_web_dome_enabled", "web_laser_enabled",
-         "web_yank_enabled", "swing_attack_enabled"))
+         "web_tie_enabled", "web_laser_enabled", "web_yank_enabled",
+         "swing_attack_enabled"))
      + "      head_icon"),
 )
+
+# Effects the engine and the level scripts create by name (default.xbe names
+# smshitassdome / smshitassglove_*; the scripts' spiderman_web_dome_destroy
+# makes spideywebdomeexp), so they are re-skinned by replacing the hero's
+# entity of that name. name: a SUBWAY_D entity whose text to use, or text.
+IDENTITY = "1.000000 0.000000 0.000000 0.000000 0.000000 1.000000 0.000000 0.000000 0.000000 0.000000 1.000000 0.000000 "
+
+
+def conglom(*sprays):
+    """An effect entity of particle systems at its origin."""
+    out = '"NEWENT"\r\nnode\r\n"CONGLOM"\r\npo\r\n%s\r\nconglom\r\nchunkend\r\n' % IDENTITY
+    for i, s in enumerate(sprays):
+        out += 'node\r\n"P%d"\r\npo\r\n%s\r\npartsys\r\n"%s"\r\nchunkend\r\nchunkend\r\n' % (i, IDENTITY, s.upper())
+    return out + "chunkend\r\n"
+
+
+def limb(node, *sprays):
+    """A glove: the node the engine attaches to a forearm, as particles."""
+    out = '"NEWENT"\r\nnode\r\n"%s"\r\npo\r\n%s\r\n' % (node, IDENTITY)
+    if sprays:
+        out += 'partsys\r\n"%s"\r\n' % sprays[0].upper()
+    else:
+        out += "conglom\r\n"
+    return out + "chunkend\r\nchunkend\r\n"
+
+
+ENTITIES = {
+    # web dome: held = his body ring, released = his ring blast
+    "smshitassdome.ent": "shkwringbody",
+    "smshitassdomeadv.ent": "shkwringbody",
+    "spideywebdomefx.ent": "shkwringgrnd",
+    "spideywebdomeexp.ent": "shksringgrnd",
+    "spideywebdomeadvexp.ent": "shksringgrnd",
+    "spideywebdomeleftover.ent": conglom(),
+    "spideywebdomeadvleftover.ent": conglom(),
+    # web gloves: electricity on the lower arms (ll/rl), nothing above
+    "smshitassglove_ll.ent": limb("LL", "sprayshkhandelec"),
+    "smshitassglove_rl.ent": limb("RL", "sprayshkhandelec"),
+    "smshitassglove_lu.ent": limb("LU"),
+    "smshitassglove_ru.ent": limb("RU"),
+    "smshitassgloveadv_ll.ent": limb("LL", "sprayshkhandelec"),
+    "smshitassgloveadv_rl.ent": limb("RL", "sprayshkhandelec"),
+    "smshitassgloveadv_lu.ent": limb("LU", "sprayshkhandglowring"),
+    "smshitassgloveadv_ru.ent": limb("RU", "sprayshkhandglowring"),
+}
 
 # The impact web shots (thrown items) re-skinned as his gauntlet bolt: his
 # bolt and hit effects instead of the web ball, and no web scripts (they
@@ -122,11 +168,37 @@ BOLT_FX, HIT_FX = "shkgntsinbolt", "shkgntsinrhitfx"
 BOLT = [
     (r"visual_entity \w+", "visual_entity " + BOLT_FX),
     (r"\n\s*script spiderman_\w+(launch)\b", r"\n    //script spiderman_\1"),
-    (r"\n(\s*)script spiderman_\w+", r"\n\1effect items\\entities\\%s\r\n\1lifetime 0.9" % HIT_FX),
+    (r"\n(\s*)script spiderman_\w+", r"\n\1effect items\\entities\\%s\r\n\1lifetime 0.5" % HIT_FX),
     (r"\n\s*sticky\w*[^\n]*", ""),
     (r"\n\s*preload [^\n]*", ""),
+    # His bolt is a beam that crosses a room in a blink; the web ball is a
+    # slow homing shot that lives 3-5 s, trailing his effect all the way.
+    (r"launch_force [\d.]+", "launch_force 45.0"),
+    (r"\n(\s*)timer [\d.]+", r"\n\1timer 1.0"),
 ]
 BOLT_ITEMS = ("impact_web.enx", "adv_impact_web.enx")
+
+# Particle settings of the copied effects, tuned for that projectile: the
+# boss's trail emitters (45 rings a second, living up to 2.5 s) pile up
+# along a flight that long and cost frames. spray entity: {field: value}.
+SPRAYS = {
+    "sprayshkgntsinboltring.ent": {"rate": 15, "life": 0.3, "fadeout": 0.25},
+    "sprayshkgntsinboltwavea.ent": {"rate": 10, "life": 0.4, "fadeout": 0.3},
+    "sprayshkgntsinboltwind.ent": {"rate": 5, "life": 0.4, "fadeout": 0.3},
+    "sprayshkgntsinrhitchunk.ent": {"rate": 20, "life": 0.5},
+    "sprayshkgntsinrhitfly.ent": {"rate": 10, "life": 0.6, "fadeout": 0.3},
+    "sprayshkgntsinrhitrim.ent": {"rate": 8, "life": 0.5, "fadeout": 0.4},
+    "sprayshkgntsinrhitbeam.ent": {"rate": 10},
+}
+
+
+def tune_spray(text, fields):
+    """Set the first '<field>' value (on the next line) of a spray entity."""
+    for field, value in fields.items():
+        text, n = re.subn(r"(\n[ \t]*%s[ \t]*\r?\n[ \t]*)[-\d.]+" % field,
+                          r"\g<1>%s" % value, text, count=1)
+        assert n == 1, field
+    return text
 
 # Entry extensions an effect can reference by bare name.
 REF_EXTS = (".ent", ".enx", ".dds", ".xbmesh", ".tbb", ".ifl")
@@ -202,8 +274,19 @@ def main(out_dir):
         text = hero.data(name).decode("latin1")
         assert text.count(old) == 1, (name, old)
         hero.put(name, text.replace(old, new).encode("latin1"))
-    fx = copy_effects(hero, boss, (BOLT_FX, HIT_FX))
+    roots = [BOLT_FX, HIT_FX]
+    for name, src in ENTITIES.items():
+        if "\n" in src:
+            text = src
+        else:
+            text = boss.data(src + ".ent").decode("latin1")
+            roots.append(src)
+        roots += [s.lower() for s in re.findall(r'"(SPRAY\w+)"', text)]
+        hero.put(name, text.encode("latin1"))
+    fx = copy_effects(hero, boss, roots)
     print("effects: %d entries copied" % len(fx))
+    for name, fields in SPRAYS.items():
+        hero.put(name, tune_spray(hero.data(name).decode("latin1"), fields).encode("latin1"))
     for name in BOLT_ITEMS:
         text = hero.data(name).decode("latin1")
         for pat, rep in BOLT:

@@ -213,6 +213,16 @@ file-redirect hook. Step 4 is iterative tuning in game. Step 6 is open-ended.
   level entry type 0xFF00xx is hero type 0x1xx): 23 entries. His sounds
   live only in SUBWAY_D's sound bank (`xboxsound\ENGLISH\subway_d.XSH`), so
   the bolt still makes web sounds.
+- **Bolt tuning and his other blasts (2026-10-28).** The bolt fired too
+  often, lingered and cost frames: the boss's trail emitters (45 rings a
+  second, up to 2.5 s each) ran along a 3 s homing flight. Now
+  `launch_force 45`, `timer 1.0`, hit effect 0.5 s, and lower rates and
+  lifetimes on the copied sprays (`SPRAYS`). The web dome and web gloves are
+  back on and re-skinned by replacing the entities the engine and scripts
+  create by name (`ENTITIES`): dome = charge (`ShkStandBlastChrg`, loop,
+  release) with his body ring, burst = strong ring blast (`shksringgrnd`),
+  leftover web = nothing; gloves = electricity on the forearms
+  (`sprayshkhandelec`, adv adds his glow rings). 60 effect entries copied.
 - The overlay folder is only used with PlayStation prompts (`pc_ps`); with
   Xbox prompts it is `overlay\pc`. Step 5 replaces this with a proper
   redirect.
