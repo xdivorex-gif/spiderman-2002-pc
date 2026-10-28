@@ -28,6 +28,8 @@
 #include <string.h>
 
 int costume_worn_index(void);
+void shocker_powers_tornado(void);  /* shocker_powers.c: what the moves do */
+void shocker_powers_blast(void);
 
 #define SHOCKER_INDEX 8             /* secrets index of shockspidey */
 
@@ -131,6 +133,10 @@ void shocker_input_filter(uint8_t *r)
                 s_macro = k;
                 s_macro_t0 = t;
                 s_used = 1;
+                if (f == AN_Y)
+                    shocker_powers_tornado();
+                else if (f == AN_X)
+                    shocker_powers_blast();
             }
             s_prev_face[k] = now;
             r[4 + f] = 0;           /* the face button is the blast's, not its own */

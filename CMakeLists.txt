@@ -58,6 +58,7 @@ set(GAME_SOURCES
     src/text_patch.c        # Xbox wording in unpacked menu text -> PC
     src/costume_panel.c     # costume choice, and its panel over the pause menu
     src/shocker_input.c     # the Shocker's blasts on L2 + a face button
+    src/shocker_powers.c    # his tornado's pull and damage, in the game
     # Add game-specific sources here, e.g.:
     # src/asset_loader.c
     # src/custom_renderer.c

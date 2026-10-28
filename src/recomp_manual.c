@@ -227,6 +227,22 @@ static int script_log_on(void)
     return on;
 }
 
+/* The Shocker's tornado and blast (src/shocker_powers.c): a tick on the
+ * game thread from the script engine's entry, and the damage records it
+ * turns round. */
+void shocker_powers_frame(void);
+void shocker_powers_damage_record(void);
+
+void sub_00051C00_enter(void)
+{
+    shocker_powers_frame();
+}
+
+void sub_002B50B4_enter(void)
+{
+    shocker_powers_damage_record();
+}
+
 void sub_0004DA60_enter(void)
 {
     if (script_log_on())
