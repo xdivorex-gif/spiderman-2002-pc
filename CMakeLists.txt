@@ -57,6 +57,7 @@ set(GAME_SOURCES
     src/spiderman.rc        # replacement art (PlayStation button prompts)
     src/text_patch.c        # Xbox wording in unpacked menu text -> PC
     src/costume_panel.c     # costume choice, and its panel over the pause menu
+    src/shocker_input.c     # the Shocker's blasts on L2 + a face button
     # Add game-specific sources here, e.g.:
     # src/asset_loader.c
     # src/custom_renderer.c

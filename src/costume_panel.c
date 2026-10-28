@@ -164,6 +164,14 @@ static int worn_row(void)
     return 0;
 }
 
+/* The secrets index of the costume worn now, -1 for the classic suit
+ * (shocker_input.c: his blasts on L2 are his alone). */
+int costume_worn_index(void)
+{
+    int r = s_want_row >= 0 ? s_want_row : worn_row();
+    return s_costumes[r].index;
+}
+
 static int game_paused(void)
 {
     uint32_t app = app_object();
@@ -258,6 +266,8 @@ static void inject(uint8_t *r)
 
 /* ── The panel's input ─────────────────────────────────────────── */
 
+void shocker_input_filter(uint8_t *r);  /* shocker_input.c */
+
 static volatile int s_open, s_sel, s_paused;
 static volatile int s_turn;             /* the 3D view: -1 / 0 / +1, held */
 static int s_swallow;                   /* eat the pad until all is released */
@@ -323,6 +333,7 @@ static void filter(int pad, uint8_t *r)
     if (!s_paused) {
         s_open = 0;
         s_swallow = 0;
+        shocker_input_filter(r);
         return;
     }
     if (s_swallow) {
