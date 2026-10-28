@@ -7,9 +7,7 @@
  *
  *   L2 + Square    Y + up      impact web    -> his double-arm blast,
  *                  then Y + down (the yank)     which knocks down what it hit
- *   L2 + Triangle  Y + down, then Y + right     his tornado: the yank draws
- *                                               the enemy in, the dome (9 m,
- *                                               120 damage) hits it up close
+ *   L2 + Triangle  Y + right   web dome      -> his tornado (9 m, 120 damage)
  *   L2 + Circle    Y + down    web yank      -> his electric yank
  *   L2 + Cross     Y + left    web gloves    -> his charged gauntlets
  *
@@ -60,7 +58,9 @@ int costume_worn_index(void);
  * first, once the first animation has let him go. */
 static const struct { int face; uint8_t dpad, dpad2; unsigned then; } s_map[] = {
     { AN_X, DPAD_UP,   DPAD_DOWN,  900  },  /* Square:   blast, yank  */
-    { AN_Y, DPAD_DOWN, DPAD_RIGHT, 1100 },  /* Triangle: yank, dome   */
+    { AN_Y, DPAD_RIGHT, 0,         0    },  /* Triangle: dome (a yank
+                                               first kept him busy, and the
+                                               dome never came) */
     { AN_B, DPAD_DOWN, 0,          0    },  /* Circle:   yank         */
     { AN_A, DPAD_LEFT, 0,          0    },  /* Cross:    gloves       */
 };
