@@ -344,35 +344,44 @@ def copy_effects(hero, src, roots):
     return sorted(found)
 
 
-# Sounds. A level loads its own bank and the menu bank, which holds the
-# player's sounds (web shots, dome, footsteps, grunts) and stays loaded; his
-# are only in subway_d's. data\xboxsound\<lang>\<bank>.XSH: three dwords
-# (157, 0, entry count), then 0x60-byte entries: name[32], 1, offset and
-# size in the .XSD, flags, volume / pitch / distances, an Xbox ADPCM
-# WAVEFORMATEX. They are appended to the menu bank, and the hero's sound
-# groups renamed to them.
+# Sounds. The menu bank holds the player's sounds (web shots, dome, punches,
+# grunts) and stays loaded through every level; it is read at the front end
+# (at boot, and on returning to the menu). His sounds are only in
+# subway_d's bank. data\xboxsound\<lang>\<bank>.XSH: three dwords (157, 0,
+# entry count), then 0x60-byte entries: name[32], 1, offset and size in the
+# .XSD, flags, volume / pitch / distances, an Xbox ADPCM WAVEFORMATEX.
+#
+# Appending his 17 sounds (74 entries -> 91, +410 KB) made the menu's own
+# sounds play at random levels, mostly far too quiet. So his bank keeps the
+# menu bank's 74 entries, names and all, and is no bigger: the entries of
+# Spider-Man's sounds the Shocker never makes point at his samples instead
+# (taking his entry's format), and their own samples are dropped. The hero's
+# sound groups are left as they are. It goes in overlay\shockspidey, which
+# src/costume_panel.c serves only while the Shocker is worn.
 SOUND_BANK = os.path.join(os.path.dirname(GAME), "data", "xboxsound", "ENGLISH")
-HIS_SOUNDS = ("sh_gauntlet_blast", "sh_gauntlet_hit", "sh_tornado", "sh_weakring",
-              "sh_strongring", "elecarc1", "footsteps_heavy1", "footsteps_heavy2",
-              "footsteps_heavy3", "footsteps_heavy4", "shaiv010", "shaiv011",
-              "shaiv012", "shaiv013", "shaiv014", "shaiv015", "shaiv016")
-SOUNDS = {
+SLOTS = {
+    # web shots and launches: his gauntlet blast; the swing (he cannot) and
+    # jump grunts (his jump is a blast off the ground) too
     "webshot1": "sh_gauntlet_blast", "webshot2": "sh_gauntlet_blast",
     "webshot3": "sh_gauntlet_blast", "weblaunch": "sh_gauntlet_blast",
-    "weblaunch_advanced": "sh_gauntlet_blast",
+    "weblaunch_advanced": "sh_gauntlet_blast", "swing": "sh_gauntlet_blast",
+    "swing2": "sh_gauntlet_blast", "smaiv059": "sh_gauntlet_blast",
+    "smaiv060": "sh_gauntlet_blast", "smaiv061": "sh_gauntlet_blast",
+    "smaiv062": "sh_gauntlet_blast",
+    # what lands: his gauntlet hit
     "webimpact": "sh_gauntlet_hit", "weblaunch_advanced_explo": "sh_gauntlet_hit",
     "punch_sm": "sh_gauntlet_hit", "punch_sm2": "sh_gauntlet_hit",
-    "webdome": "sh_weakring", "webdome2": "sh_weakring", "webbust": "sh_strongring",
-    "webgloves": "elecarc1", "webgloves2": "elecarc1",
-    "webtie": "elecarc1", "webyoyo": "elecarc1",
-    "sm_ftsteps1": "footsteps_heavy1", "sm_ftsteps2": "footsteps_heavy2",
-    "sm_ftsteps3": "footsteps_heavy3", "sm_ftsteps4": "footsteps_heavy4",
-    # his jump is a blast off the ground and a ring on landing
-    "smaiv059": "sh_gauntlet_blast", "smaiv060": "sh_gauntlet_blast",
-    "smaiv061": "sh_gauntlet_blast", "smaiv062": "sh_gauntlet_blast",
+    # the dome is his tornado, its burst his strong ring; landing his weak ring
+    "webdome": "sh_tornado", "webdome2": "sh_tornado", "webbust": "sh_strongring",
     "sm_landing": "sh_weakring",
+    # gloves, the yank's line, spider-sense (he has none): electricity
+    "webgloves": "elecarc1", "webgloves2": "elecarc1", "webtie": "elecarc1",
+    "webyoyo": "elecarc1", "spideysense": "elecarc1",
+    # Spider-Man's lines: his own (pick up, throw, death); three of them, as
+    # five did not fit in the menu bank's size
+    "smaiv063": "shaiv010", "smaiv064": "shaiv011", "smaiv065": "shaiv010",
+    "smaiv066": "shaiv011", "smaiv092": "shaiv012",
 }
-TAUNTS = ("shaiv010", "shaiv011", "shaiv012", "shaiv013", "shaiv014", "shaiv015", "shaiv016")
 
 
 def bank_entries(path):
@@ -381,41 +390,46 @@ def bank_entries(path):
     return d[:12], [bytearray(d[12 + i * 0x60:12 + (i + 1) * 0x60]) for i in range(n)]
 
 
-def build_bank(out_dir):
-    """menu.XSH / .XSD with his sounds appended."""
+def entry_name(e):
+    return e[:32].split(b"\0")[0].decode().lower()
+
+
+def build_shocker_bank(out_dir):
+    """overlay\\shockspidey's menu.XSH / .XSD: see SLOTS."""
     hdr, menu = bank_entries(os.path.join(SOUND_BANK, "menu.XSH"))
     _, boss = bank_entries(os.path.join(SOUND_BANK, "subway_d.XSH"))
-    data = bytearray(open(os.path.join(SOUND_BANK, "menu.XSD"), "rb").read())
+    menu_data = open(os.path.join(SOUND_BANK, "menu.XSD"), "rb").read()
     boss_data = open(os.path.join(SOUND_BANK, "subway_d.XSD"), "rb").read()
-    by_name = {e[:32].split(b"\0")[0].decode(): e for e in boss}
-    for name in HIS_SOUNDS:
-        e = bytearray(by_name[name])
-        off, size = struct.unpack_from("<II", e, 0x24)
-        struct.pack_into("<I", e, 0x24, len(data))
-        data += boss_data[off:off + size]
-        menu.append(e)
-    hdr = bytearray(hdr)
-    struct.pack_into("<I", hdr, 8, len(menu))
+    his = {entry_name(e): e for e in boss}
+    data, placed = bytearray(), {}      # (bank, offset) -> new offset
+
+    def place(src, off, size):
+        if (src, off) not in placed:
+            placed[src, off] = len(data)
+            data.extend((menu_data if src == "menu" else boss_data)[off:off + size])
+        return placed[src, off]
+
+    out = []
+    for e in menu:
+        name = entry_name(e)
+        if name in SLOTS:
+            h = bytearray(his[SLOTS[name]])
+            off, size = struct.unpack_from("<II", h, 0x24)
+            h[:32] = e[:32]
+            struct.pack_into("<I", h, 0x24, place("boss", off, size))
+            out.append(h)
+        else:
+            off, size = struct.unpack_from("<II", e, 0x24)
+            e = bytearray(e)
+            struct.pack_into("<I", e, 0x24, place("menu", off, size))
+            out.append(e)
+    assert len(data) <= len(menu_data), "his bank is bigger than the menu bank"
     dst = os.path.join(out_dir, "data", "xboxsound", "ENGLISH")
     os.makedirs(dst, exist_ok=True)
-    open(os.path.join(dst, "menu.XSH"), "wb").write(bytes(hdr) + b"".join(menu))
+    open(os.path.join(dst, "menu.XSH"), "wb").write(bytes(hdr) + b"".join(out))
     open(os.path.join(dst, "menu.XSD"), "wb").write(data)
-    print("sound: %d of his sounds in the menu bank (+%d KB)"
-          % (len(HIS_SOUNDS), (len(data) - os.path.getsize(os.path.join(SOUND_BANK, "menu.XSD"))) // 1024))
-
-
-def resound(text):
-    """Point 'file X' at his sounds, and give the taunt groups his taunts."""
-    lower = {k.lower(): v for k, v in SOUNDS.items()}
-    text = re.sub(r"(\bfile[ \t]+)(\w+)",
-                  lambda m: m.group(1) + lower.get(m.group(2).lower(), m.group(2)), text)
-    # the yank's lasso is his spin: its whoosh (shared with every attack)
-    # becomes his tornado in that group only
-    text = re.sub(r"(name rodeo_yank\b.*?file[ \t]+)whoosh3", r"\1sh_tornado", text,
-                  count=1, flags=re.S)
-    taunts = "".join("\t\t\tsound:\r\n\t\t\t\tfile %s\r\n\t\t\t\tfreq 1.0\r\n\t\t\tchunkend\r\n" % t
-                     for t in TAUNTS)
-    return re.sub(r"(name taunt\r?\n\s*history -?\d+\r?\n\s*voice\r?\n)", r"\1" + taunts.replace("\\", "\\\\"), text)
+    print("sound: %d menu entries are his, bank %d KB (menu's own %d KB)"
+          % (sum(entry_name(e) in SLOTS for e in menu), len(data) // 1024, len(menu_data) // 1024))
 
 
 def dxt5_from_brightness(dds):
@@ -544,15 +558,13 @@ def main(out_dir):
         roots.append("sprayshkhandtrail")
     hero.put("shockspidey.ent", ent.encode("latin1"))
     copy_effects(hero, boss, ["sprayshkhandtrail"])
-    # His sounds are off for now (resound, build_bank). The menu bank with
-    # them appended made the menu's own sounds play at random levels, mostly
-    # far too quiet (back to normal with the original bank), and his never
-    # played in a level anyway. The bank the build wrote is removed, so a
-    # rebuild cannot leave it behind.
+    # His sounds: a menu bank of his own beside the shared overlay (SLOTS).
+    # The shared overlay must not carry one: every costume reads that.
     bank = os.path.join(out_dir, "data", "xboxsound", "ENGLISH")
     for f in ("menu.XSH", "menu.XSD"):
         if os.path.exists(os.path.join(bank, f)):
             os.remove(os.path.join(bank, f))
+    build_shocker_bank(os.path.join(os.path.dirname(os.path.abspath(out_dir)), "shockspidey"))
     levels = {}
     for name, (level, src) in TEXTURES.items():
         if level not in levels:

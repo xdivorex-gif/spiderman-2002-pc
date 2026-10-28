@@ -97,6 +97,26 @@ s_costumes[] = {
 
 static volatile int s_want_row = -2;    /* row of s_costumes; -1 game's choice; -2 unread */
 
+void xbox_set_extra_overlay(const char *dir);   /* kernel_path.c */
+
+/* Files only one costume uses: overlay\<costume> beside the exe, served
+ * before the shared overlay while that costume is chosen. The Shocker's is
+ * a menu sound bank with his sounds in the slots of Spider-Man's own
+ * (tools/shocker_build.py); the menu bank is read at the front end, so it
+ * changes with the costume chosen there or in settings.ini. */
+static void costume_overlay(int row)
+{
+    char dir[MAX_PATH], *slash;
+    if (row < 0 || strcmp(s_costumes[row].name, "shockspidey")
+        || !GetModuleFileNameA(NULL, dir, sizeof dir) || !(slash = strrchr(dir, '\\'))) {
+        xbox_set_extra_overlay(NULL);
+        return;
+    }
+    _snprintf(slash + 1, sizeof dir - (slash + 1 - dir), "overlay\\%s", s_costumes[row].name);
+    dir[sizeof dir - 1] = 0;
+    xbox_set_extra_overlay(dir);
+}
+
 static void read_choice(void)
 {
     const char *e;
@@ -111,6 +131,7 @@ static void read_choice(void)
             s_want_row = i;
     if (e && *e && _stricmp(e, "default") && s_want_row < 0)
         fprintf(stderr, "  [COSTUME] unknown RECOMP_COSTUME \"%s\", ignored\n", e);
+    costume_overlay(s_want_row);
 }
 
 static uint32_t app_object(void)
@@ -300,6 +321,7 @@ static void apply(int row)
     const char *ini = getenv("RECOMP_INPUT_INI");     /* settings.ini, see settings.c */
 
     s_want_row = row;
+    costume_overlay(row);
     if (profile)
         write_costume_bytes(profile, row);
     if (ini && *ini)
