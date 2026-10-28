@@ -418,8 +418,10 @@ SLOTS = {
     "sm_ftsteps1": "footsteps_heavy1", "sm_ftsteps2": "footsteps_heavy2",
     "sm_ftsteps3": "footsteps_heavy3", "sm_ftsteps4": "footsteps_heavy4",
 }
-# Free to take though nothing of his goes there: he cannot swing.
-SPARE = ("swing", "swing2", "swing3", "sm_bump")
+# Free to take though nothing of his goes there. Not the swing sounds,
+# though he cannot swing: other characters' blows play them, which came out
+# as scraps of his samples.
+SPARE = ()
 ADPCM_BLOCK = 36
 MENU_SOUNDS = {"webshot1": "webshot2"}     # played by menu.sx as well
 
