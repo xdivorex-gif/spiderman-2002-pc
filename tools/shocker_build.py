@@ -138,13 +138,17 @@ SOURCES = {
     "ShkShockJmpHit": ("ShkShockJmp", [(0.3, STRIKE), (1.07, STRIKE)]),
     # his own fires at 0.0, which a web shot never reaches
     "ShkWeakBlast": ("ShkWeakBlast", [(0.25, FIRE)]),
-    # both arms out: the bolt leaves as the arms reach full stretch
-    "ShkDblBlast": ("ShkStandBlastLoop", [(0.25, FIRE)]),
+    # the boss fires at the loop's own 0.03 s, arms out from his charge; by
+    # 0.25 s they are swinging back to his sides
+    "ShkDblBlast": ("ShkStandBlastLoop", None),
     # the dome's start carries no events (its effect follows the animation);
     # his launch's two fire events ended the tornado before it showed
     "ShkTornadoLnch": ("ShkSpinSwavLnch", []),
-    # the jump leaves the ground at the fire event: his crouch is 0.33 s
-    "ShkShockJmpFLnch": ("ShkShockJmpFLnch", [(0.2, FIRE)]),
+    # the jump leaves the ground at the fire event: his crouch is 0.33 s, but
+    # the jump's sound plays on the press (Spider-Man's leaves at 0.03 s)
+    "ShkShockJmpFLnch": ("ShkShockJmpFLnch", [(0.08, FIRE)]),
+    # the landing's sound goes with its step events, as Spider-Man's
+    "ShkShockJmpFLnd": ("ShkShockJmpFLnd", [(0.03, 0x200), (0.07, 0x400)]),
     "ShkStandBlastHit": ("ShkStandBlastLoop", [(0.1, STRIKE), (0.35, STRIKE), (0.6, STRIKE)]),
     # the yank's line leaves and pulls at Spider-Man's moments
     "ShkYankFire": ("ShkWeakBlast", [(0.13, FIRE)]),
@@ -298,7 +302,10 @@ BOLT_FX, HIT_FX = "shkdblbeam", "shkgntdam"     # shkdblbeam: ENTITIES
 BOLT = [
     (r"visual_entity \w+", "visual_entity " + BOLT_FX),
     (r"\n\s*script spiderman_\w+(launch)\b", r"\n    //script spiderman_\1"),
-    (r"\n(\s*)script spiderman_\w+", r"\n\1effect items\\entities\\%s\r\n\1lifetime 0.5" % HIT_FX),
+    # what it hits: an explosion (every level's grenade_explode, what knocks
+    # people down -- the boss beam's own is grenade_explode_fx) and his burst
+    (r"\n(\s*)script spiderman_\w+",
+     r"\n\1script grenade_explode\r\n\1effect items\\entities\\%s\r\n\1lifetime 0.5" % HIT_FX),
     (r"\n\s*sticky\w*[^\n]*", ""),
     (r"\n\s*preload [^\n]*", ""),
     (r"\n(\s*)damage \d+", r"\n\1damage 50"),
@@ -384,9 +391,9 @@ def copy_effects(hero, src, roots):
 # levels either.) Voice lines are a different kind of entry and stay his.
 SOUND_BANK = os.path.join(os.path.dirname(GAME), "data", "xboxsound", "ENGLISH")
 SLOTS = {
-    # web shots and launches: his gauntlet blast; jump grunts too (his jump
-    # is a blast off the ground)
-    "webshot1": "sh_gauntlet_blast", "webshot2": "sh_gauntlet_blast",
+    # web shots and launches: his gauntlet blast. Not webshot1: the pause
+    # menu plays it (his files use webshot2, MENU_SOUNDS).
+    "webshot2": "sh_gauntlet_blast",
     "webshot3": "sh_gauntlet_blast", "weblaunch": "sh_gauntlet_blast",
     "weblaunch_advanced": "sh_gauntlet_blast", "smaiv059": "sh_gauntlet_blast",
     "smaiv060": "sh_gauntlet_blast", "smaiv061": "sh_gauntlet_blast",
