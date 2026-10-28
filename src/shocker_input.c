@@ -5,15 +5,11 @@
  * the web button (Y; Triangle on a PlayStation pad) with a direction of the
  * d-pad, as the pause menu's Combat Controls lists them:
  *
- *   L2 + Square    Y + up      impact web    -> his double-arm blast,
- *                  then Y + down (the yank)     which knocks down what it hit
+ *   L2 + Square    Y + up      impact web    -> his double-arm blast
  *   L2 + Triangle  Y + right   web dome      -> his tornado (9 m, 120 damage)
  *   L2 + Circle    Y + down    web yank      -> his electric yank
  *   L2 + Cross     Y + left    web gloves    -> his charged gauntlets
  *
- * The yank is the game's own knock-down: what it pulls flies and lands on
- * the ground. Thrown shots have no explosive hit (combo moves' "explosive"
- * flag is what knocks down), and the explosion scripts crashed.
  *
  * Only while the Shocker is worn (costume_worn_index). L2 -- the left
  * trigger, analog byte 6 of the report -- is kept from the game while held;
@@ -57,7 +53,7 @@ int costume_worn_index(void);
 /* One or two specials in a row: the second starts `then` ms after the
  * first, once the first animation has let him go. */
 static const struct { int face; uint8_t dpad, dpad2; unsigned then; } s_map[] = {
-    { AN_X, DPAD_UP,   DPAD_DOWN,  900  },  /* Square:   blast, yank  */
+    { AN_X, DPAD_UP,   0,          0    },  /* Square:   blast        */
     { AN_Y, DPAD_RIGHT, 0,         0    },  /* Triangle: dome (a yank
                                                first kept him busy, and the
                                                dome never came) */

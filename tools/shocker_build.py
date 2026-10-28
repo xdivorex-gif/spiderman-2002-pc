@@ -328,7 +328,11 @@ BOLT_ITEMS = ("impact_web.enx", "adv_impact_web.enx")
 # boss's trail emitters (45 rings a second, living up to 2.5 s) pile up
 # along a flight that long and cost frames. spray entity: {field: value}.
 SPRAYS = {
-    "sprayshkgntsinboltring.ent": {"rate": 20, "life": 0.3, "fadeout": 0.25},
+    "sprayshkgntsinboltring.ent": {"rate": 40, "life": 0.4, "fadeout": 0.3, "motion": 0},
+    # the bolt's head is a large glow (a billboard, radius 6) at 5 a second:
+    # two or three in a flight. Laid down 60 a second where they are made, it
+    # is a bright bar along the shot.
+    "sprayshkgntsinbolthead.ent": {"rate": 60, "life": 0.45, "fadeout": 0.4, "motion": 0},
     # the double-arm blast's bar (BOLT_FX)
     "spraysbdshktunnelhead.ent": {"life": 0.6, "fadeout": 0.3},
     # motion 0: the trail stays where it was laid instead of riding along
