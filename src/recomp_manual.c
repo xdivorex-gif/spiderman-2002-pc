@@ -46,7 +46,7 @@ typedef void (*recomp_func_t)(void);
 
 /* ── Register state (defined in xbox_memory_layout.c) ──────── */
 
-extern uint32_t g_eax;
+extern __declspec(thread) uint32_t g_eax;  /* guest registers are per thread */
 extern ptrdiff_t g_xbox_mem_offset;
 
 /* ── D3D GPU semaphore ─────────────────────────────────────── */
@@ -258,6 +258,32 @@ void recomp_icall_not_code_log(uint32_t va)
                 fprintf(stderr, " %08X", GUEST32(sp + 4 * k));
             fprintf(stderr, "\n");
         }
+    }
+    /* The object the call went through: a method call (call [vtable+n])
+     * leaves the object in ecx and its vtable in edx or eax. For the
+     * autoload hang (a script native at 0x00050D30 with a null vtable) this
+     * names which native; any field pointing at text is printed. */
+    {
+        extern __declspec(thread) uint32_t g_ecx, g_edx;
+        uint32_t k, obj = g_ecx;
+        fprintf(stderr, "[ICALL]   ecx=%08X edx=%08X eax=%08X", obj, g_edx, g_eax);
+        if (g_xbox_mem_offset && obj > 0x10000 && obj < 0x04000000 - 64) {
+            fprintf(stderr, "; [ecx]:");
+            for (k = 0; k < 12; k++)
+                fprintf(stderr, " %08X", GUEST32(obj + 4 * k));
+            for (k = 0; k < 12; k++) {
+                uint32_t p = GUEST32(obj + 4 * k), n = 0;
+                const char *s;
+                if (p < 0x10000 || p >= 0x04000000 - 64)
+                    continue;
+                s = (const char *)((uint8_t *)g_xbox_mem_offset + p);
+                while (n < 48 && s[n] >= 0x20 && s[n] < 0x7F)
+                    n++;
+                if (n >= 4 && (n == 48 || s[n] == 0))
+                    fprintf(stderr, " [+%u]=\"%.*s\"", 4 * k, (int)n, s);
+            }
+        }
+        fprintf(stderr, "\n");
     }
     fflush(stderr);
 }
