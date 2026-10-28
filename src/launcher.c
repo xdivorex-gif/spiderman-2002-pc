@@ -168,7 +168,8 @@ static void load(void)
     SendMessageA(s_res, CB_SETCURSEL, found, 0);
 
     GetPrivateProfileStringA("Display", "AspectRatio", "stretch", v, sizeof v, s_ini);
-    SendMessageA(s_aspect, CB_SETCURSEL, strcmp(v, "4:3") == 0 ? 1 : 0, 0);
+    SendMessageA(s_aspect, CB_SETCURSEL,
+                 strcmp(v, "4:3") == 0 ? 2 : strcmp(v, "widescreen") == 0 ? 0 : 1, 0);
     SendMessageA(s_aa, CB_SETCURSEL,
                  GetPrivateProfileIntA("Display", "Supersampling", 0, s_ini) ? 1 : 0, 0);
     GetPrivateProfileStringA("Graphics", "Renderer", "gpu", v, sizeof v, s_ini);
@@ -197,7 +198,8 @@ static int save(void)
     res_value(s_res, v, sizeof v);
     ok &= WritePrivateProfileStringA("Display", "Resolution", v, s_ini);
     ok &= WritePrivateProfileStringA("Display", "AspectRatio",
-                                     combo_sel(s_aspect) == 1 ? "4:3" : "stretch", s_ini);
+                                     combo_sel(s_aspect) == 2 ? "4:3"
+                                     : combo_sel(s_aspect) == 1 ? "stretch" : "widescreen", s_ini);
     ok &= WritePrivateProfileStringA("Display", "Supersampling",
                                      combo_sel(s_aa) == 1 ? "1" : "0", s_ini);
     ok &= WritePrivateProfileStringA("Display", "Fullscreen",
@@ -558,6 +560,7 @@ static void build(HWND w)
     add(w, "STATIC", "Aspect ratio", SS_LEFT, lx, y + 5, 130, 20, 0, s_font);
     s_aspect = add(w, "COMBOBOX", "", CBS_DROPDOWNLIST | WS_TABSTOP,
                    cx, y, cw, 120, ID_ASPECT, s_font);
+    combo_add(s_aspect, "Widescreen (see more to the sides)");
     combo_add(s_aspect, "Stretch to fill the screen");
     combo_add(s_aspect, "Original 4:3 (bars at the sides)");
     y += rh;

@@ -227,6 +227,35 @@ static int script_log_on(void)
     return on;
 }
 
+/* ── Widescreen (Hor+) ─────────────────────────────────────── */
+
+/*
+ * sub_00298400 sets the camera's projection: the perspective matrix
+ * (sub_002B0841) from a vertical field of view and an aspect of
+ * [0x6F2C94] * 4/3, where [0x6F2C94] is a scale the game sets once to 1.0.
+ * RECOMP_HOR_PLUS (settings.c, AspectRatio=widescreen: the screen's width
+ * over 4:3) becomes that scale as each projection is made, so the camera
+ * keeps its vertical view and sees that much more to the sides; the 4:3
+ * picture stretched to the screen then has everything its true shape.
+ */
+#define SM_PROJ_ASPECT_SCALE 0x006F2C94u
+
+void sub_00298400_enter(void)
+{
+    static float scale = -1.0f;
+    if (scale < 0.0f) {
+        const char *e = getenv("RECOMP_HOR_PLUS");
+        scale = e && *e ? (float)atof(e) : 0.0f;
+        if (scale < 1.0f || scale > 4.0f)
+            scale = 0.0f;
+    }
+    if (scale > 0.0f) {
+        uint32_t bits;
+        memcpy(&bits, &scale, 4);
+        GUEST32(SM_PROJ_ASPECT_SCALE) = bits;
+    }
+}
+
 /* The Shocker's tornado and blast (src/shocker_powers.c): a tick on the
  * game thread from the script engine's entry, and the damage records it
  * turns round. */

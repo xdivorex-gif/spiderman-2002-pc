@@ -16,7 +16,9 @@
  *
  *   [Display]
  *   Resolution=1920x1080      output size; 640x480 is the original
- *   AspectRatio=stretch       stretch: fill 16:9 | 4:3: original shape, bars
+ *   AspectRatio=stretch       widescreen: the 3D sees more to the sides (Hor+)
+ *                             | stretch: the 4:3 picture filling 16:9
+ *                             | 4:3: original shape, bars
  *   Fullscreen=0              1: borderless fullscreen at start (F11 toggles)
  *   VSync=1                   0: present without waiting for the display
  *   Supersampling=0           1: render at twice the size and shrink (sharper
@@ -114,6 +116,19 @@ void settings_apply(void)
     four3 = strcmp(v, "4:3") == 0;
     if (four3)
         w = (h * 4 + 1) / 3;                /* the original shape, centred */
+    {
+        /* widescreen: the 3D camera sees as much more to the sides as the
+         * screen is wider than 4:3 (Hor+, recomp_manual.c), so the stretch
+         * to the screen gives everything its true shape */
+        char s[32];
+        double f = (double)w * 3.0 / ((double)h * 4.0);
+        if (strcmp(v, "widescreen") == 0 && f > 1.01) {
+            sprintf(s, "%.4f", f);
+            set("RECOMP_HOR_PLUS", s);
+        } else {
+            set("RECOMP_HOR_PLUS", NULL);
+        }
+    }
     ss = GetPrivateProfileIntA("Display", "Supersampling", 0, ini) != 0;
     rw = ss ? w * 2 : w;
     rh = ss ? h * 2 : h;
