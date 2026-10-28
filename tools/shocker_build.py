@@ -106,14 +106,55 @@ TEXT = (
      "  disable_hang\r\n  disable_crawl\r\n"),
     # The web weapons: fields of the hero's spidermanX goal, read by the same
     # parser as head_icon (sub_00244FC0: web_tie +0xCF ... web_yank +0xD7).
+    # The impact web stays on: it becomes his gauntlet bolt (BOLT below).
     ("shockspidey.enx", "      head_icon",
      "".join("      %s 0\r\n" % k for k in (
          "web_tie_enabled", "web_spikes_enabled", "adv_web_spikes_enabled",
-         "web_dome_enabled", "adv_web_dome_enabled", "impact_web_enabled",
-         "adv_impact_web_enabled", "web_laser_enabled", "web_yank_enabled",
-         "swing_attack_enabled"))
+         "web_dome_enabled", "adv_web_dome_enabled", "web_laser_enabled",
+         "web_yank_enabled", "swing_attack_enabled"))
      + "      head_icon"),
 )
+
+# The impact web shots (thrown items) re-skinned as his gauntlet bolt: his
+# bolt and hit effects instead of the web ball, and no web scripts (they
+# stick webbing to what is hit). Regex edits per item, applied in order.
+BOLT_FX, HIT_FX = "shkgntsinbolt", "shkgntsinrhitfx"
+BOLT = [
+    (r"visual_entity \w+", "visual_entity " + BOLT_FX),
+    (r"\n\s*script spiderman_\w+(launch)\b", r"\n    //script spiderman_\1"),
+    (r"\n(\s*)script spiderman_\w+", r"\n\1effect items\\entities\\%s\r\n\1lifetime 0.9" % HIT_FX),
+    (r"\n\s*sticky\w*[^\n]*", ""),
+    (r"\n\s*preload [^\n]*", ""),
+]
+BOLT_ITEMS = ("impact_web.enx", "adv_impact_web.enx")
+
+# Entry extensions an effect can reference by bare name.
+REF_EXTS = (".ent", ".enx", ".dds", ".xbmesh", ".tbb", ".ifl")
+
+
+def copy_effects(hero, src, roots):
+    """Copy effect entities and everything they name (sprays, meshes,
+    textures) from a level package into the hero package. Names the hero
+    already has are kept. Textures go first, then meshes, then text, so
+    each is in place before what uses it."""
+    import struct
+    found, todo = {}, [r + ".ent" for r in roots]
+    while todo:
+        name = todo.pop()
+        if name in found or hero.find(name) or not src.find(name):
+            continue
+        e = src.find(name)
+        found[name] = e
+        if e.stream == xbs.IN_TEXT:
+            for tok in set(re.findall(r"[A-Za-z0-9_]+", src.data(name).decode("latin1"))):
+                tok = tok.lower()
+                todo += [tok + x for x in REF_EXTS]
+    rank = {xbs.TYPE_DDS: 0, xbs.TYPE_MESH: 1}
+    for name in sorted(found, key=lambda n: (rank.get(0x100 | (found[n].type & 0xFF), 2), n)):
+        t = 0x100 | (found[name].type & 0xFF)
+        hero.put(name, src.data(name), t,
+                 align=0x1000 if t in (xbs.TYPE_DDS, xbs.TYPE_MESH) else 0x20)
+    return sorted(found)
 
 
 def set_events(anim, events):
@@ -161,6 +202,13 @@ def main(out_dir):
         text = hero.data(name).decode("latin1")
         assert text.count(old) == 1, (name, old)
         hero.put(name, text.replace(old, new).encode("latin1"))
+    fx = copy_effects(hero, boss, (BOLT_FX, HIT_FX))
+    print("effects: %d entries copied" % len(fx))
+    for name in BOLT_ITEMS:
+        text = hero.data(name).decode("latin1")
+        for pat, rep in BOLT:
+            text = re.sub(pat, rep, text)
+        hero.put(name, text.encode("latin1"))
     print("%d Shocker animations; stream 0 %d bytes, reserved %d"
           % (len(set(ANIMS.values())), len(hero.s0), BUDGET))
     assert len(hero.s0) <= BUDGET

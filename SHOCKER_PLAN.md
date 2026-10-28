@@ -203,6 +203,16 @@ file-redirect hook. Step 4 is iterative tuning in game. Step 6 is open-ended.
   hit nothing; the build adds copies with strikes (`ShkWeakBlastHit`,
   `ShkRingHit`, `ShkSpinHit`, `ShkShockJmpHit`). These are melee-range
   hits: a ranged gauntlet blast needs the projectile work of step 4.
+- **Gauntlet bolt (2026-10-28).** Switching all web weapons off left the web
+  button doing nothing, so his blasts never played. The impact web stays on
+  and is re-skinned instead: in `impact_web.enx` / `adv_impact_web.enx` the
+  visual is his bolt (`shkgntsinbolt`), hits and wall hits show his hit
+  effect (`shkgntsinrhitfx`), and the web scripts (which stick webbing to
+  what is hit) and sticky flags are gone. `copy_effects` brings an effect's
+  closure from SUBWAY_D (sprays, `.xbmesh`, `.dds` named by bare token; a
+  level entry type 0xFF00xx is hero type 0x1xx): 23 entries. His sounds
+  live only in SUBWAY_D's sound bank (`xboxsound\ENGLISH\subway_d.XSH`), so
+  the bolt still makes web sounds.
 - The overlay folder is only used with PlayStation prompts (`pc_ps`); with
   Xbox prompts it is `overlay\pc`. Step 5 replaces this with a proper
   redirect.
