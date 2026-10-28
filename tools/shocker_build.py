@@ -251,6 +251,8 @@ RING_SPRAYS = ("sprayshksringflash", "sprayshksringgrndwave", "sprayshksringchun
                "sprayshksringglow", "sprayshksringblast", "sprayshksringwaveslow",
                "sprayshksringupchunk", "sprayshksringupring", "sprayshksringflysmoke",
                "sprayshksringburst")
+DAM_SPRAYS = ("sprayshkgntdamglow", "sprayshkgntdamspark", "sprayshkgntdamdistort",
+              "sprayshkgntdamline", "sprayshkgntdamsmoke")
 WEAK_SPRAYS = ("sprayshkwringflash", "sprayshkwringring", "sprayshkwringwaveslow")
 
 # name: SUBWAY_D entity whose text to use, text, or (reskin mesh, sprays)
@@ -268,6 +270,9 @@ ENTITIES = {
     "spideywebdomeadvleftover.ent": conglom(),
     # every punch that lands (the engine makes fx\smhitreacta / b): his
     # gauntlet-hit sparks
+    # the explosions the double-arm blast's hit scripts make: his beam's burst
+    "smshitasswebballadvexp.ent": (None, DAM_SPRAYS),
+    "smshitasswebballexp.ent": (None, DAM_SPRAYS),
     # the double-arm blast's visual (BOLT_FX)
     "shkdblbeam.ent": conglom("spraysbdshktunnelhead", "sprayshkgntsinbolthead",
                               "sprayshkgntsinboltring", "sprayshkgntsinboltwind",
@@ -302,10 +307,12 @@ BOLT_FX, HIT_FX = "shkdblbeam", "shkgntdam"     # shkdblbeam: ENTITIES
 BOLT = [
     (r"visual_entity \w+", "visual_entity " + BOLT_FX),
     (r"\n\s*script spiderman_\w+(launch)\b", r"\n    //script spiderman_\1"),
-    # what it hits: an explosion (every level's grenade_explode, what knocks
-    # people down -- the boss beam's own is grenade_explode_fx) and his burst
-    (r"\n(\s*)script spiderman_\w+",
-     r"\n\1script grenade_explode\r\n\1effect items\\entities\\%s\r\n\1lifetime 0.5" % HIT_FX),
+    # what it hits: the advanced impact web's explosion, which knocks people
+    # back (the hero's own script, so in every level; grenade_explode needs
+    # an entity only two levels have and crashed), re-skinned as his burst
+    # (ENTITIES), and his burst
+    (r"\n(\s*)script spiderman_\w+?(hit_\w+)",
+     r"\n\1script spiderman_webball_adv_\2\r\n\1effect items\\entities\\%s\r\n\1lifetime 0.5" % HIT_FX),
     (r"\n\s*sticky\w*[^\n]*", ""),
     (r"\n\s*preload [^\n]*", ""),
     (r"\n(\s*)damage \d+", r"\n\1damage 50"),
