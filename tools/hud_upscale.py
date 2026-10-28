@@ -3,7 +3,8 @@ r"""Upscale HUD art into the texture pack (texpack\<hash>.png).
     py -3 tools/hud_upscale.py [--dry]
     py -3 tools/hud_upscale.py --legal     the boot legal screen (see legal())
 
-The head icons beside the health bar (ib_*.dds: each hero's head_icon and
+The health bar (e_healthbar*: its ring and frame), the head icons in it
+(ib_*.dds: each hero's head_icon and
 its stealth variant, and the bosses'), the compass and the height meter
 (altimiter*, alt_*), read from every package under game_files\data, decoded
 exactly as the renderer decodes them (d3d8_dxt_decode_texel), named by the
@@ -30,7 +31,7 @@ ESRGAN = os.path.join(ROOT, "tools", "realesrgan", "realesrgan-ncnn-vulkan.exe")
 MODEL = "realesrgan-x4plus-anime"
 OUT = (os.path.join(ROOT, "texpack"), os.path.join(ROOT, "build", "Release", "texpack"))
 
-WANT = re.compile(r"^(ib_\w+|compass_\w+|compas_\w+|e_compass_\w+|altimiter\w*|alt_\w+)\.dds$")
+WANT = re.compile(r"^(ib_\w+|e_healthbar\w*|compass_\w+|compas_\w+|e_compass_\w+|altimiter\w*|alt_\w+)\.dds$")
 
 
 def expand(v, bits):
