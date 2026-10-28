@@ -55,7 +55,7 @@ ANIMS = {
     # spin and landing), gloves = charge
     "SmImpactWeb": "ShkDblBlast",
     "SmImpactWebADV": "ShkDblBlast",
-    "SmIdl2ShieldDome": "ShkSpinSwavLnch",
+    "SmIdl2ShieldDome": "ShkTornadoLnch",
     "SmShieldDomeIdl": "ShkSpinSwavBlst",
     "SmShieldDome2Idl": "ShkSpinSwavLnd",
     "SmCreateWebSpikeHn": "ShkStandBlastChrg",
@@ -140,6 +140,9 @@ SOURCES = {
     "ShkWeakBlast": ("ShkWeakBlast", [(0.25, FIRE)]),
     # both arms out: the bolt leaves as the arms reach full stretch
     "ShkDblBlast": ("ShkStandBlastLoop", [(0.25, FIRE)]),
+    # the dome's start carries no events (its effect follows the animation);
+    # his launch's two fire events ended the tornado before it showed
+    "ShkTornadoLnch": ("ShkSpinSwavLnch", []),
     # the jump leaves the ground at the fire event: his crouch is 0.33 s
     "ShkShockJmpFLnch": ("ShkShockJmpFLnch", [(0.2, FIRE)]),
     "ShkStandBlastHit": ("ShkStandBlastLoop", [(0.1, STRIKE), (0.35, STRIKE), (0.6, STRIKE)]),
@@ -234,6 +237,7 @@ TRAILS = {
 }
 
 RING_MESH, WAVE_MESH ="fxshkwringring", "fxshksringgrndwave"
+TORNADO = "shkspnbody"              # his spin attack's cyclone (SUBWAY_D)
 RING_SPRAYS = ("sprayshksringflash", "sprayshksringgrndwave", "sprayshksringchunk",
                "sprayshksringglow", "sprayshksringblast", "sprayshksringwaveslow",
                "sprayshksringupchunk", "sprayshksringupring", "sprayshksringflysmoke",
@@ -249,8 +253,10 @@ ENTITIES = {
     "spideywebdomefx.ent": (None, WEAK_SPRAYS),
     "spideywebdomeexp.ent": (None, RING_SPRAYS),
     "spideywebdomeadvexp.ent": (RING_MESH, RING_SPRAYS),
-    "spideywebdomeleftover.ent": (WAVE_MESH, ()),
-    "spideywebdomeadvleftover.ent": (WAVE_MESH, ()),
+    # what the dome leaves on the ground stays a long time (webbing): his
+    # ground wave lying there looked endless, so nothing is left
+    "spideywebdomeleftover.ent": conglom(),
+    "spideywebdomeadvleftover.ent": conglom(),
     # every punch that lands (the engine makes fx\smhitreacta / b): his
     # gauntlet-hit sparks
     "smhitreacta.ent": (None, ("sprayshkgntsinrhitstar", "sprayshkgntsinrhitring")),
@@ -507,6 +513,20 @@ def main(out_dir):
             roots.append(src)
         roots += [s.lower() for s in re.findall(r'"(SPRAY\w+)"', text)]
         hero.put(name, text.encode("latin1"))
+    # The dome is his tornado (L2 + Triangle): the boss's spin body -- a
+    # cyclone of spinning meshes with wind, glow and rays -- grafted under
+    # the dome's root, so it shows and ends with the dome, whose own nodes
+    # the scripts animate.
+    spin = boss.data(TORNADO + ".ent").decode("latin1")
+    root_end = "conglom\r\nchunkend\r\n"
+    first = spin.index(root_end) + len(root_end)
+    cyclone = spin[first:spin.rindex("chunkend\r\n")]
+    for name in ("smshitassdome.ent", "smshitassdomeadv.ent"):
+        text = hero.data(name).decode("latin1")
+        at = text.index("conglom\r\n") + len("conglom\r\n")
+        at = text.index("chunkend\r\n", at) + len("chunkend\r\n")
+        hero.put(name, (text[:at] + cyclone + text[at:]).encode("latin1"))
+    roots += [TORNADO] + [s.lower() for s in re.findall(r'"(SPRAY\w+)"', cyclone)]
     fx = copy_effects(hero, boss, roots)
     print("effects: %d entries copied" % len(fx))
     # His gauntlets' blue aura: the boss's TRAILR / TRAILL, particle trails
