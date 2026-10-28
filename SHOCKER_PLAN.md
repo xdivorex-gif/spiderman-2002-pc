@@ -223,6 +223,21 @@ file-redirect hook. Step 4 is iterative tuning in game. Step 6 is open-ended.
   release) with his body ring, burst = strong ring blast (`shksringgrnd`),
   leftover web = nothing; gloves = electricity on the forearms
   (`sprayshkhandelec`, adv adds his glow rings). 60 effect entries copied.
+- **Ring blast crash (2026-10-28).** Releasing the dome stopped the game
+  (`KeBugCheck`, then a null call through `[0x4B906C]` in the main loop at
+  `0x000F702E`): the level scripts animate the dome and its burst
+  (`smshitassdome_a.anmx`, `spideywebdomeadvexp_a.anmx`) and look up its
+  parts (`DOME01`..), and the replacement entities had none. `reskin` now
+  keeps each entity's nodes, animids and bones and only swaps what they
+  show: mesh parts show his ring mesh (`fxshkwringring`), particle systems
+  his ring-blast sprays, leftovers his ground wave. `copy_effects` also
+  follows texture names inside copied meshes.
+- **Sound.** Level banks are `xboxsound\<lang>\<level>.XSH` (count at +4,
+  0x60-byte entries, name at +0x0C) indexing `.XSD` sample data. His sounds
+  (`sh_gauntlet_blast`, `sh_gauntlet_hit`, `sh_weakring`, `sh_strongring`,
+  `sh_tornado`) are only in subway_d's. Next: append them to every level's
+  bank through the overlay, then point the bolt and ring sound groups at
+  them.
 - The overlay folder is only used with PlayStation prompts (`pc_ps`); with
   Xbox prompts it is `overlay\pc`. Step 5 replaces this with a proper
   redirect.

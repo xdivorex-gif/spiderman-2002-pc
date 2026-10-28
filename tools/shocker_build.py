@@ -141,15 +141,43 @@ def limb(node, *sprays):
     return out + "chunkend\r\nchunkend\r\n"
 
 
+def reskin(text, mesh=None, sprays=()):
+    """Keep an entity's nodes (names, animids, bones), swap what they show:
+    every mesh part shows `mesh`, every particle system the next of
+    `sprays`, and a skinned mesh on the root is dropped. The level scripts
+    animate the dome and its burst (smshitassdome_a.anmx,
+    spideywebdomeadvexp_a.anmx) and look its parts up by name (DOME01..):
+    an entity without them makes the game stop with a fatal error."""
+    text = re.sub(r'(conglom\r?\n)meshfile\r?\n"[^"]*"\r?\n', r"\1", text)
+    if mesh:
+        text = re.sub(r'(entity\r?\nmeshfile\r?\n)"[^"]*"', r'\1"%s"' % mesh, text)
+    if sprays:
+        n = [0]
+        def next_spray(m):
+            n[0] += 1
+            return m.group(1) + '"%s"' % sprays[(n[0] - 1) % len(sprays)].upper()
+        text = re.sub(r'(partsys\r?\n)"[^"]*"', next_spray, text)
+    return text
+
+
+RING_MESH, WAVE_MESH = "fxshkwringring", "fxshksringgrndwave"
+RING_SPRAYS = ("sprayshksringflash", "sprayshksringgrndwave", "sprayshksringchunk",
+               "sprayshksringglow", "sprayshksringblast", "sprayshksringwaveslow",
+               "sprayshksringupchunk", "sprayshksringupring", "sprayshksringflysmoke",
+               "sprayshksringburst")
+WEAK_SPRAYS = ("sprayshkwringflash", "sprayshkwringring", "sprayshkwringwaveslow")
+
+# name: SUBWAY_D entity whose text to use, text, or (reskin mesh, sprays)
+# applied to the hero's own entity of that name.
 ENTITIES = {
-    # web dome: held = his body ring, released = his ring blast
-    "smshitassdome.ent": "shkwringbody",
-    "smshitassdomeadv.ent": "shkwringbody",
-    "spideywebdomefx.ent": "shkwringgrnd",
-    "spideywebdomeexp.ent": "shksringgrnd",
-    "spideywebdomeadvexp.ent": "shksringgrnd",
-    "spideywebdomeleftover.ent": conglom(),
-    "spideywebdomeadvleftover.ent": conglom(),
+    # web dome: held = rings of his energy round him, released = ring blast
+    "smshitassdome.ent": (RING_MESH, ()),
+    "smshitassdomeadv.ent": (RING_MESH, ()),
+    "spideywebdomefx.ent": (None, WEAK_SPRAYS),
+    "spideywebdomeexp.ent": (None, RING_SPRAYS),
+    "spideywebdomeadvexp.ent": (RING_MESH, RING_SPRAYS),
+    "spideywebdomeleftover.ent": (WAVE_MESH, ()),
+    "spideywebdomeadvleftover.ent": (WAVE_MESH, ()),
     # web gloves: electricity on the lower arms (ll/rl), nothing above
     "smshitassglove_ll.ent": limb("LL", "sprayshkhandelec"),
     "smshitassglove_rl.ent": limb("RL", "sprayshkhandelec"),
@@ -210,15 +238,18 @@ def copy_effects(hero, src, roots):
     already has are kept. Textures go first, then meshes, then text, so
     each is in place before what uses it."""
     import struct
-    found, todo = {}, [r + ".ent" for r in roots]
+    found, todo = {}, [r + x for r in roots for x in REF_EXTS]
     while todo:
         name = todo.pop()
         if name in found or hero.find(name) or not src.find(name):
             continue
         e = src.find(name)
         found[name] = e
-        if e.stream == xbs.IN_TEXT:
-            for tok in set(re.findall(r"[A-Za-z0-9_]+", src.data(name).decode("latin1"))):
+        # text names its sprays and meshes; a mesh names its textures in
+        # its materials, as plain strings among the binary
+        if e.stream == xbs.IN_TEXT or name.endswith(".xbmesh"):
+            raw = src.data(name).decode("latin1")
+            for tok in set(re.findall(r"[A-Za-z0-9_]{3,}", raw)):
                 tok = tok.lower()
                 todo += [tok + x for x in REF_EXTS]
     rank = {xbs.TYPE_DDS: 0, xbs.TYPE_MESH: 1}
@@ -276,7 +307,11 @@ def main(out_dir):
         hero.put(name, text.replace(old, new).encode("latin1"))
     roots = [BOLT_FX, HIT_FX]
     for name, src in ENTITIES.items():
-        if "\n" in src:
+        if isinstance(src, tuple):
+            mesh, sprays = src
+            text = reskin(hero.data(name).decode("latin1"), mesh, sprays)
+            roots += [mesh] if mesh else []
+        elif "\n" in src:
             text = src
         else:
             text = boss.data(src + ".ent").decode("latin1")
