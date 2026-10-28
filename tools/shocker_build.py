@@ -678,6 +678,11 @@ def main(out_dir):
     for name, fields in SPRAYS.items():
         if hero.find(name):         # an effect no longer used is not copied
             hero.put(name, tune_spray(hero.data(name).decode("latin1"), fields).encode("latin1"))
+    # LOCAL_SPACE keeps a spray's particles riding with what made them,
+    # whatever its motion: the beam's glow stays where it is laid
+    head = hero.data("sprayshkgntsinbolthead.ent").decode("latin1")
+    assert "+LOCAL_SPACE" in head
+    hero.put("sprayshkgntsinbolthead.ent", head.replace("+LOCAL_SPACE", "").encode("latin1"))
     for name in BOLT_ITEMS:
         text = hero.data(name).decode("latin1")
         for pat, rep in BOLT:
