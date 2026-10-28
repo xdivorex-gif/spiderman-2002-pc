@@ -236,6 +236,14 @@ file-redirect hook. Step 4 is iterative tuning in game. Step 6 is open-ended.
   `fx\smhitreacta` / `fx\smhitreactb` (named in default.xbe); re-skinned in
   place with his gauntlet-hit sparks. Motion trail colours in the
   `spidermanX` block are his blue-white.
+- **Shock jump as locomotion (2026-10-28).** The locomotion block parser
+  (`sub_0025A1B0`) also takes `jump_force` (+0x808, default 20),
+  `double_jump_force` (+0x80C, 15), `jump_xz_move_speed` (+0x81C, 7.5),
+  `double_jump_xz_move_speed` (+0x820, 12.5), gravity and glider settings.
+  He gets 34 / 30 / 11 / 16 (about 2.9x the height). His launch leaves the
+  ground at 0.2 s (fire event) instead of his 0.33 s crouch. The engine
+  names no jump or landing effect, so a ground wave on landing would need
+  host code.
 - **Sound.** Level banks are `xboxsound\<lang>\<level>.XSH` (count at +4,
   0x60-byte entries, name at +0x0C) indexing `.XSD` sample data. His sounds
   (`sh_gauntlet_blast`, `sh_gauntlet_hit`, `sh_weakring`, `sh_strongring`,

@@ -96,6 +96,8 @@ SOURCES = {
     "ShkShockJmpHit": ("ShkShockJmp", [(0.3, STRIKE), (1.07, STRIKE)]),
     # his own fires at 0.0, which a web shot never reaches
     "ShkWeakBlast": ("ShkWeakBlast", [(0.25, FIRE)]),
+    # the jump leaves the ground at the fire event: his crouch is 0.33 s
+    "ShkShockJmpFLnch": ("ShkShockJmpFLnch", [(0.2, FIRE)]),
 }
 
 # Text edits: (entry, old, new). No spider powers: the Goblin's package turns
@@ -103,7 +105,12 @@ SOURCES = {
 TEXT = (
     ("spiderman_new.ai", "  type spiderman\r\n",
      "  type spiderman\r\n  disable_zip\r\n  disable_swing\r\n"
-     "  disable_hang\r\n  disable_crawl\r\n"),
+     "  disable_hang\r\n  disable_crawl\r\n"
+     # His shock jump is how he gets around instead: jump height goes with
+     # the force squared. Defaults (sub_0025A1B0 / its constructor): 20, 15,
+     # 7.5, 12.5.
+     "  jump_force 34.0\r\n  double_jump_force 30.0\r\n"
+     "  jump_xz_move_speed 11.0\r\n  double_jump_xz_move_speed 16.0\r\n"),
     # The web weapons: fields of the hero's spidermanX goal, read by the same
     # parser as head_icon (sub_00244FC0: web_tie +0xCF ... web_yank +0xD7).
     # The impact web stays on: it becomes his gauntlet bolt (BOLT below).
