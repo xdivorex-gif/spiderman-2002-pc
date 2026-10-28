@@ -171,6 +171,18 @@ file-redirect hook. Step 4 is iterative tuning in game. Step 6 is open-ended.
   are settled for small changes: the package loads with a rewritten header
   and directory and a longer stream 0. Whether the punch reads as ShkPun2 in
   play is still to be seen by eye.
+- **Step 3, animations: built (2026-10-28), being tried in game.**
+  `tools/shocker_build.py <overlay dir>` adds 26 of his animations under
+  their own names and renames 38 slots in `spiderman.ani` and 39 moves in
+  `spiderman.mbo` (map in the script: stance, walk, run, fall; jumps = shock
+  jump; hits, knock-downs, death; impact web = weak blast, dome = ring blast,
+  web gloves = gauntlet charge; single hits = shock punch, three-hit
+  finishers = weak blast, the strongest = ring blast, jump finishers = spin
+  blast, uppercuts = weak ring jump). Stream 0 is 4,309,072 bytes, over the
+  4,092,800 the game reserves; an overlay `aux_xbox.txt` raises the
+  shockspidey line to 6,000,000, and the level loads and plays with it.
+  Done before step 2 (his body), which is still Spider-Man's in the
+  shockspidey suit.
 - The overlay folder is only used with PlayStation prompts (`pc_ps`); with
   Xbox prompts it is `overlay\pc`. Step 5 replaces this with a proper
   redirect.
