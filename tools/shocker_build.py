@@ -264,6 +264,10 @@ ENTITIES = {
     "spideywebdomeadvleftover.ent": conglom(),
     # every punch that lands (the engine makes fx\smhitreacta / b): his
     # gauntlet-hit sparks
+    # the double-arm blast's visual (BOLT_FX)
+    "shkdblbeam.ent": conglom("spraysbdshktunnelhead", "sprayshkgntsinbolthead",
+                              "sprayshkgntsinboltring", "sprayshkgntsinboltwind",
+                              "spraysbdshktunnelwind"),
     "smhitreacta.ent": (None, ("sprayshkgntsinrhitstar", "sprayshkgntsinrhitring")),
     "smhitreactb.ent": (None, ("sprayshkgntsinrhitstar", "sprayshkgntsinrhitring",
                                "sprayshkgntsinrhitrim")),
@@ -285,7 +289,12 @@ ENTITIES = {
 # gauntlet (shocker_gauntletd.enx): 50 damage with a 1 m blast radius --
 # hit as an explosion, which knocks people down -- and its hit effect, the
 # beam's burst (shkgntdam: distortion, glow, line, smoke, sparks).
-BOLT_FX, HIT_FX = "shkgntsinbolt", "shkgntdam"
+# The boss draws his as a beam, a bar 0.3 m wide fading over 0.4 s; this
+# shot is a projectile (90 m/s), so its look is a bar: the boss's tunnel
+# blast head and his bolt's head at the front, and both their wind trails
+# dense and short-lived behind (SPRAYS), a solid streak that fades as his
+# beam did.
+BOLT_FX, HIT_FX = "shkdblbeam", "shkgntdam"     # shkdblbeam: ENTITIES
 BOLT = [
     (r"visual_entity \w+", "visual_entity " + BOLT_FX),
     (r"\n\s*script spiderman_\w+(launch)\b", r"\n    //script spiderman_\1"),
@@ -305,9 +314,12 @@ BOLT_ITEMS = ("impact_web.enx", "adv_impact_web.enx")
 # boss's trail emitters (45 rings a second, living up to 2.5 s) pile up
 # along a flight that long and cost frames. spray entity: {field: value}.
 SPRAYS = {
-    "sprayshkgntsinboltring.ent": {"rate": 15, "life": 0.3, "fadeout": 0.25},
+    "sprayshkgntsinboltring.ent": {"rate": 20, "life": 0.3, "fadeout": 0.25},
+    # the double-arm blast's bar (BOLT_FX)
+    "spraysbdshktunnelhead.ent": {"life": 0.6, "fadeout": 0.3},
+    "spraysbdshktunnelwind.ent": {"rate": 60, "life": 0.35, "fadefor": 0, "fadeout": 0.3},
     "sprayshkgntsinboltwavea.ent": {"rate": 10, "life": 0.4, "fadeout": 0.3},
-    "sprayshkgntsinboltwind.ent": {"rate": 5, "life": 0.4, "fadeout": 0.3},
+    "sprayshkgntsinboltwind.ent": {"rate": 60, "life": 0.35, "fadeout": 0.3},
     "sprayshkgntsinrhitchunk.ent": {"rate": 20, "life": 0.5},
     "sprayshkgntsinrhitfly.ent": {"rate": 10, "life": 0.6, "fadeout": 0.3},
     "sprayshkgntsinrhitrim.ent": {"rate": 8, "life": 0.5, "fadeout": 0.4},
@@ -584,7 +596,7 @@ def main(out_dir):
             text = boss.data(src + ".ent").decode("latin1")
             roots.append(src)
         roots += [s.lower() for s in re.findall(r'"(SPRAY\w+)"', text)]
-        hero.put(name, text.encode("latin1"))
+        hero.put(name, text.encode("latin1"), None if hero.find(name) else xbs.TYPE_TEXT)
     # The dome is his tornado (L2 + Triangle): the boss's spin body -- a
     # cyclone of spinning meshes with wind, glow and rays -- grafted under
     # the dome's root, so it shows and ends with the dome, whose own nodes
