@@ -179,9 +179,14 @@ TEXT = (
     # The impact web stays on: it becomes his gauntlet bolt (BOLT below).
     # The dome and gloves stay on too: his ring blast and charged gauntlets
     # (ENTITIES below).
+    # The dome is his tornado: wider and harder than Spider-Man's (defaults
+    # from the goal's constructor: damage 90 / adv 175 at +0x374 / +0x378,
+    # range 6 m at +0x37C). The game has no pull for it.
     ("shockspidey.enx", "      head_icon",
      "".join("      %s 0\r\n" % k for k in (
          "web_tie_enabled", "web_laser_enabled", "swing_attack_enabled"))
+     + "      web_dome_damage 120.0\r\n      adv_web_dome_damage 200.0\r\n"
+       "      web_dome_range 9.0\r\n      adv_web_dome_range 12.0\r\n"
      + "      head_icon"),
 )
 
@@ -276,17 +281,23 @@ ENTITIES = {
 # The impact web shots (thrown items) re-skinned as his gauntlet bolt: his
 # bolt and hit effects instead of the web ball, and no web scripts (they
 # stick webbing to what is hit). Regex edits per item, applied in order.
-BOLT_FX, HIT_FX = "shkgntsinbolt", "shkgntsinrhitfx"
+# It is his double-arm blast (L2 + Square), so it takes the boss's double
+# gauntlet (shocker_gauntletd.enx): 50 damage with a 1 m blast radius --
+# hit as an explosion, which knocks people down -- and its hit effect, the
+# beam's burst (shkgntdam: distortion, glow, line, smoke, sparks).
+BOLT_FX, HIT_FX = "shkgntsinbolt", "shkgntdam"
 BOLT = [
     (r"visual_entity \w+", "visual_entity " + BOLT_FX),
     (r"\n\s*script spiderman_\w+(launch)\b", r"\n    //script spiderman_\1"),
     (r"\n(\s*)script spiderman_\w+", r"\n\1effect items\\entities\\%s\r\n\1lifetime 0.5" % HIT_FX),
     (r"\n\s*sticky\w*[^\n]*", ""),
     (r"\n\s*preload [^\n]*", ""),
-    # His bolt is a beam that crosses a room in a blink; the web ball is a
-    # slow homing shot that lives 3-5 s, trailing his effect all the way.
-    (r"launch_force [\d.]+", "launch_force 45.0"),
-    (r"\n(\s*)timer [\d.]+", r"\n\1timer 1.0"),
+    (r"\n(\s*)damage \d+", r"\n\1damage 50"),
+    (r"\n(\s*)radius [\d.]+", r"\n\1radius 1.0"),
+    # A beam crosses a room in a blink; the web ball is a slow homing shot
+    # that lives 3-5 s, trailing his effect all the way.
+    (r"launch_force [\d.]+", "launch_force 90.0"),
+    (r"\n(\s*)timer [\d.]+", r"\n\1timer 0.6"),
 ]
 BOLT_ITEMS = ("impact_web.enx", "adv_impact_web.enx")
 
@@ -361,8 +372,10 @@ def copy_effects(hero, src, roots):
 SOUND_BANK = os.path.join(os.path.dirname(GAME), "data", "xboxsound", "ENGLISH")
 SLOTS = {
     # web shots and launches: his gauntlet blast; the swing (he cannot) and
-    # jump grunts (his jump is a blast off the ground) too
-    "webshot1": "sh_gauntlet_blast", "webshot2": "sh_gauntlet_blast",
+    # jump grunts (his jump is a blast off the ground) too. Not webshot1:
+    # the menus play it (menu.sx), so his files name webshot2 instead
+    # (MENU_SOUNDS).
+    "webshot2": "sh_gauntlet_blast",
     "webshot3": "sh_gauntlet_blast", "weblaunch": "sh_gauntlet_blast",
     "weblaunch_advanced": "sh_gauntlet_blast", "swing": "sh_gauntlet_blast",
     "swing2": "sh_gauntlet_blast", "smaiv059": "sh_gauntlet_blast",
@@ -382,6 +395,9 @@ SLOTS = {
     "smaiv063": "shaiv010", "smaiv064": "shaiv011", "smaiv065": "shaiv010",
     "smaiv066": "shaiv011", "smaiv092": "shaiv012",
 }
+
+
+MENU_SOUNDS = {"webshot1": "webshot2"}     # played by menu.sx as well
 
 
 def bank_entries(path):
@@ -514,6 +530,16 @@ def main(out_dir):
         text = hero.data(name).decode("latin1")
         assert text.count(old) == 1, (name, old)
         hero.put(name, text.replace(old, new).encode("latin1"))
+    # sounds the menus play too keep Spider-Man's sample in his bank, so his
+    # files use a slot that is his alone
+    for e in hero.entries:
+        if e.name.endswith((".enx", ".inc", ".ent")) and e.stream == xbs.IN_TEXT:
+            text = hero.data(e.name).decode("latin1")
+            new = text
+            for old, his in MENU_SOUNDS.items():
+                new = re.sub(r"(\bfile[ \t]+)%s\b" % old, r"\g<1>" + his, new, flags=re.I)
+            if new != text:
+                hero.put(e.name, new.encode("latin1"))
     roots = [BOLT_FX, HIT_FX]
     for name, src in ENTITIES.items():
         if isinstance(src, tuple):
@@ -580,7 +606,8 @@ def main(out_dir):
         assert n == 1, part
     hero.put("shockspidey.enx", text.encode("latin1"))
     for name, fields in SPRAYS.items():
-        hero.put(name, tune_spray(hero.data(name).decode("latin1"), fields).encode("latin1"))
+        if hero.find(name):         # an effect no longer used is not copied
+            hero.put(name, tune_spray(hero.data(name).decode("latin1"), fields).encode("latin1"))
     for name in BOLT_ITEMS:
         text = hero.data(name).decode("latin1")
         for pat, rep in BOLT:
