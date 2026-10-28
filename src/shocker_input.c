@@ -5,10 +5,17 @@
  * the web button (Y; Triangle on a PlayStation pad) with a direction of the
  * d-pad, as the pause menu's Combat Controls lists them:
  *
- *   L2 + Square    Y + up      impact web    -> his double-arm blast
- *   L2 + Triangle  Y + right   web dome      -> his tornado
+ *   L2 + Square    Y + up      impact web    -> his double-arm blast,
+ *                  then Y + down (the yank)     which knocks down what it hit
+ *   L2 + Triangle  Y + down, then Y + right     his tornado: the yank draws
+ *                                               the enemy in, the dome (9 m,
+ *                                               120 damage) hits it up close
  *   L2 + Circle    Y + down    web yank      -> his electric yank
  *   L2 + Cross     Y + left    web gloves    -> his charged gauntlets
+ *
+ * The yank is the game's own knock-down: what it pulls flies and lands on
+ * the ground. Thrown shots have no explosive hit (combo moves' "explosive"
+ * flag is what knocks down), and the explosion scripts crashed.
  *
  * Only while the Shocker is worn (costume_worn_index). L2 -- the left
  * trigger, analog byte 6 of the report -- is kept from the game while held;
@@ -49,11 +56,13 @@ int costume_worn_index(void);
 #define DPAD_LEFT  0x04
 #define DPAD_RIGHT 0x08
 
-static const struct { int face; uint8_t dpad; } s_map[] = {
-    { AN_X, DPAD_UP    },           /* Square   */
-    { AN_Y, DPAD_RIGHT },           /* Triangle */
-    { AN_B, DPAD_DOWN  },           /* Circle   */
-    { AN_A, DPAD_LEFT  },           /* Cross    */
+/* One or two specials in a row: the second starts `then` ms after the
+ * first, once the first animation has let him go. */
+static const struct { int face; uint8_t dpad, dpad2; unsigned then; } s_map[] = {
+    { AN_X, DPAD_UP,   DPAD_DOWN,  900  },  /* Square:   blast, yank  */
+    { AN_Y, DPAD_DOWN, DPAD_RIGHT, 1100 },  /* Triangle: yank, dome   */
+    { AN_B, DPAD_DOWN, 0,          0    },  /* Circle:   yank         */
+    { AN_A, DPAD_LEFT, 0,          0    },  /* Cross:    gloves       */
 };
 
 static int s_lt_down, s_used, s_prev_face[4];
@@ -136,11 +145,16 @@ void shocker_input_filter(uint8_t *r)
 
     if (s_macro >= 0) {
         DWORD dt = t - s_macro_t0;
+        uint8_t dpad = s_map[s_macro].dpad;
+        if (s_map[s_macro].dpad2 && dt >= s_map[s_macro].then) {
+            dt -= s_map[s_macro].then;
+            dpad = s_map[s_macro].dpad2;
+        }
         if (dt < PAD_MS) {
-            r[2] = (uint8_t)((r[2] & ~0x0F) | s_map[s_macro].dpad);
+            r[2] = (uint8_t)((r[2] & ~0x0F) | dpad);
             if (dt >= WEB_FROM && dt < WEB_TO)
                 r[4 + AN_Y] = 0xFF;
-        } else {
+        } else if (!s_map[s_macro].dpad2 || t - s_macro_t0 >= s_map[s_macro].then) {
             s_macro = -1;
         }
     }
