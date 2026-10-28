@@ -13,9 +13,6 @@
  * It runs on the game thread, from the script engine's entry
  * (shocker_powers_frame: many times a frame), at most every TICK_MS, and only
  * while the Shocker is worn and a level has a hero.
- *
- * RECOMP_GAME_LOG also logs the damage records made just after his
- * double-arm blast (L2 + Square), to see which kind its hit is.
  */
 #include <windows.h>
 #include <stdint.h>
@@ -41,23 +38,13 @@ int costume_worn_index(void);
 #define TORNADO_MS       4000       /* the dome's own time */
 #define TICK_MS          400
 #define TORNADO_RADIUS   8.0f
-#define TORNADO_DAMAGE   6.0f
+#define TORNADO_DAMAGE   15.0f   /* a tick: 6 went unnoticed */
 
 static volatile DWORD s_tornado_at, s_blast_at;
 static int s_pulling, s_busy;
 
 void shocker_powers_tornado(void) { s_tornado_at = GetTickCount(); }
 void shocker_powers_blast(void)   { s_blast_at = GetTickCount(); }
-
-static int game_log_on(void)
-{
-    static int on = -1;
-    if (on < 0) {
-        const char *e = getenv("RECOMP_GAME_LOG");
-        on = e && *e && *e != '0';
-    }
-    return on;
-}
 
 static uint32_t fbits(float f)
 {
@@ -140,19 +127,22 @@ void shocker_powers_frame(void)
     s_busy = 0;
 }
 
-/* A damage record being made (sub_002B50B4_enter, recomp_manual.c; cdecl:
- * type, centre, direction, ...). In the tornado's calls the direction is
- * turned round: thrown in, not out. */
+/* sub_002B50B4 (sub_002B50B4_enter, recomp_manual.c; cdecl) is called all
+ * over the game, thousands of times a second; the radius damage makes its
+ * blast with it as (6, centre, direction, 0, 0x3F8570, 0x4C0714). Only
+ * those, and only in the tornado's own calls, have the direction turned
+ * round: thrown in, not out. (Logging every call for a while after the
+ * blast cost half the frame rate.) */
 void shocker_powers_damage_record(void)
 {
-    uint32_t type = GUEST32(g_esp + 4), dir = GUEST32(g_esp + 12);
+    uint32_t dir;
+    int k;
 
-    if (s_pulling && dir && dir < 0x04000000) {
-        int k;
-        for (k = 0; k < 3; k++)
-            GUEST32(dir + 4 * k) ^= 0x80000000u;
-    }
-    if (game_log_on() && s_blast_at && GetTickCount() - s_blast_at < 2000 && !s_pulling)
-        fprintf(stderr, "[SHOCKER] damage record type %u after the blast (%lu ms)\n",
-                type, GetTickCount() - s_blast_at);
+    if (!s_pulling || GUEST32(g_esp + 4) != 6 || GUEST32(g_esp + 24) != 0x004C0714u)
+        return;
+    dir = GUEST32(g_esp + 12);
+    if (!dir || dir >= 0x04000000)
+        return;
+    for (k = 0; k < 3; k++)
+        GUEST32(dir + 4 * k) ^= 0x80000000u;
 }

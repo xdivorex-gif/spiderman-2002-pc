@@ -273,10 +273,7 @@ ENTITIES = {
     # the explosions the double-arm blast's hit scripts make: his beam's burst
     "smshitasswebballadvexp.ent": (None, DAM_SPRAYS),
     "smshitasswebballexp.ent": (None, DAM_SPRAYS),
-    # the double-arm blast's visual (BOLT_FX)
-    "shkdblbeam.ent": conglom("spraysbdshktunnelhead", "sprayshkgntsinbolthead",
-                              "sprayshkgntsinboltring", "sprayshkgntsinboltwind",
-                              "spraysbdshktunnelwind"),
+
     "smhitreacta.ent": (None, ("sprayshkgntsinrhitstar", "sprayshkgntsinrhitring")),
     "smhitreactb.ent": (None, ("sprayshkgntsinrhitstar", "sprayshkgntsinrhitring",
                                "sprayshkgntsinrhitrim")),
@@ -303,7 +300,7 @@ ENTITIES = {
 # blast head and his bolt's head at the front, and both their wind trails
 # dense and short-lived behind (SPRAYS), a solid streak that fades as his
 # beam did.
-BOLT_FX, HIT_FX = "shkdblbeam", "shkgntdam"     # shkdblbeam: ENTITIES
+BOLT_FX, HIT_FX = "shkgntsinbolt", "shkgntdam"
 BOLT = [
     (r"visual_entity \w+", "visual_entity " + BOLT_FX),
     (r"\n\s*script spiderman_\w+(launch)\b", r"\n    //script spiderman_\1"),
@@ -328,21 +325,14 @@ BOLT_ITEMS = ("impact_web.enx", "adv_impact_web.enx")
 # boss's trail emitters (45 rings a second, living up to 2.5 s) pile up
 # along a flight that long and cost frames. spray entity: {field: value}.
 SPRAYS = {
-    "sprayshkgntsinboltring.ent": {"rate": 40, "life": 0.4, "fadeout": 0.3, "motion": 0},
-    # the bolt's head is a large glow (a billboard, radius 6) at 5 a second:
-    # two or three in a flight. Laid down 60 a second where they are made, it
-    # is a bright bar along the shot.
-    "sprayshkgntsinbolthead.ent": {"rate": 60, "life": 0.45, "fadeout": 0.4, "motion": 0},
-    # the double-arm blast's bar (BOLT_FX)
-    "spraysbdshktunnelhead.ent": {"life": 0.6, "fadeout": 0.3},
-    # motion 0: the trail stays where it was laid instead of riding along
-    # with the shot, so it draws a streak (at 0.1-0.2 it was a dot flicking
-    # past); offscale widens it
-    "spraysbdshktunnelwind.ent": {"rate": 80, "life": 0.45, "fadefor": 0, "fadeout": 0.4,
-                                  "motion": 0, "offscale": 0.6},
+    # The double-arm blast is the boss's bolt (a beam entity of its own sprays
+    # never drew, and 60-80 a second of them cost half the frame rate). Its
+    # head, a glow on the shot, is twice the size (radius, its material's);
+    # rings and wind a little denser.
+    "sprayshkgntsinboltring.ent": {"rate": 25, "life": 0.3, "fadeout": 0.25},
+    "sprayshkgntsinbolthead.ent": {"radius": 12},
     "sprayshkgntsinboltwavea.ent": {"rate": 10, "life": 0.4, "fadeout": 0.3},
-    "sprayshkgntsinboltwind.ent": {"rate": 80, "life": 0.45, "fadeout": 0.4, "motion": 0,
-                                   "offscale": 0.6},
+    "sprayshkgntsinboltwind.ent": {"rate": 20, "life": 0.4, "fadeout": 0.3, "offscale": 0.6},
     "sprayshkgntsinrhitchunk.ent": {"rate": 20, "life": 0.5},
     "sprayshkgntsinrhitfly.ent": {"rate": 10, "life": 0.6, "fadeout": 0.3},
     "sprayshkgntsinrhitrim.ent": {"rate": 8, "life": 0.5, "fadeout": 0.4},
@@ -678,11 +668,6 @@ def main(out_dir):
     for name, fields in SPRAYS.items():
         if hero.find(name):         # an effect no longer used is not copied
             hero.put(name, tune_spray(hero.data(name).decode("latin1"), fields).encode("latin1"))
-    # LOCAL_SPACE keeps a spray's particles riding with what made them,
-    # whatever its motion: the beam's glow stays where it is laid
-    head = hero.data("sprayshkgntsinbolthead.ent").decode("latin1")
-    assert "+LOCAL_SPACE" in head
-    hero.put("sprayshkgntsinbolthead.ent", head.replace("+LOCAL_SPACE", "").encode("latin1"))
     for name in BOLT_ITEMS:
         text = hero.data(name).decode("latin1")
         for pat, rep in BOLT:
