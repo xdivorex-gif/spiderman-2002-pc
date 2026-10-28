@@ -36,6 +36,14 @@ problem; look at why pacing starts late only if a timed scene needs it.
 DLSS/frame generation: not built in (no motion vectors, DLSS-G needs D3D12);
 the launcher points at NVIDIA Smooth Motion / Lossless Scaling instead.
 
+**Boot legal screen (2026-10-28):** bonus\LEGAL.xbs is six logo tiles
+(legal_00..05, one 640x512 picture), the font chis22 and legalbox.txt.
+tools\make_overlay.py now writes overlay\<pc|pc_ps>\data\bonus\LEGAL.xbs with
+the Microsoft/Xbox paragraph replaced by a Windows PC one (same four lines;
+checked on screen). tools\hud_upscale.py --legal upscales the tiles as one
+picture (no seams) and the font x4 into the pack. text_patch.c's in-memory
+swap of that paragraph stays as a fallback when the overlay is off.
+
 **HUD art upscaled (2026-10-28):** tools\hud_upscale.py finds the head icons
 next to the health bar (ib_*, 45 of them, each hero's head_icon and stealth
 variant plus the bosses'), the compass (compass_*, compas_*, e_compass_bace)

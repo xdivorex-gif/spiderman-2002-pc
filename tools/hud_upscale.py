@@ -1,6 +1,7 @@
 r"""Upscale HUD art into the texture pack (texpack\<hash>.png).
 
     py -3 tools/hud_upscale.py [--dry]
+    py -3 tools/hud_upscale.py --legal     the boot legal screen (see legal())
 
 The head icons beside the health bar (ib_*.dds: each hero's head_icon and
 its stealth variant, and the bosses'), the compass and the height meter
@@ -133,7 +134,65 @@ def collect():
     return found
 
 
+# The boot legal screen (bonus\LEGAL.xbs): its logos are six tiles making one
+# 640x512 picture (tile: x, y). Upscaled as that picture and cut back into
+# tiles, so no seam shows where two tiles meet; its font goes as one image.
+LEGAL_TILES = {"legal_00": (0, 0), "legal_01": (128, 0), "legal_02": (384, 0),
+               "legal_03": (0, 256), "legal_04": (128, 256), "legal_05": (384, 256)}
+LEGAL_FONT = "chis22"
+SCALE = 4
+
+
+def dds_texels(pkg, name):
+    d = pkg.data(name + ".dds")
+    h, w = struct.unpack_from("<II", d, 12)
+    return w, h, decode_dxt(d[128:], w, h, d[84:88])
+
+
+def esrgan(src, dst):
+    subprocess.run([ESRGAN, "-i", src, "-o", dst, "-n", MODEL, "-s", str(SCALE), "-f", "png"],
+                   cwd=os.path.dirname(ESRGAN), check=True)
+
+
+def legal(tmp):
+    """The legal screen's logos and font into the pack."""
+    pkg = xbs.Package(os.path.join(GAME, "bonus", "LEGAL.xbs"))
+    mw, mh = 640, 512
+    mosaic = [0] * (mw * mh)
+    tiles = {}
+    for name, (x0, y0) in LEGAL_TILES.items():
+        w, h, px = dds_texels(pkg, name)
+        tiles[name] = (x0, y0, w, h, fnv(px))
+        for y in range(h):
+            mosaic[(y0 + y) * mw + x0:(y0 + y) * mw + x0 + w] = px[y * w:(y + 1) * w]
+    src, dst = os.path.join(tmp, "legal_in"), os.path.join(tmp, "legal_out")
+    os.makedirs(src)
+    os.makedirs(dst)
+    write_png(os.path.join(src, "mosaic.png"), mosaic, mw, mh)
+    w, h, px = dds_texels(pkg, LEGAL_FONT)
+    write_png(os.path.join(src, "%08X.png" % fnv(px)), px, w, h)
+    esrgan(src, dst)
+    big = os.path.join(dst, "mosaic.png")
+    for name, (x0, y0, w, h, hsh) in tiles.items():
+        out = os.path.join(dst, "%08X.png" % hsh)
+        subprocess.run(["ffmpeg", "-v", "error", "-y", "-i", big, "-vf",
+                        "crop=%d:%d:%d:%d,format=rgba" % (w * SCALE, h * SCALE, x0 * SCALE, y0 * SCALE),
+                        out], check=True)
+        print("%08X %s" % (hsh, name))
+    os.remove(big)
+    return dst
+
+
 def main(dry):
+    if "--legal" in sys.argv:
+        with tempfile.TemporaryDirectory() as tmp:
+            dst = legal(tmp)
+            for f in os.listdir(dst):
+                data = open(os.path.join(dst, f), "rb").read()
+                for d in OUT:
+                    open(os.path.join(d, f), "wb").write(data)
+            print("legal screen: %d images into the pack" % len(os.listdir(dst)))
+        return
     found = collect()
     for hsh, (name, w, h, _) in sorted(found.items(), key=lambda kv: kv[1][0]):
         print("%08X %-32s %dx%d" % (hsh, name, w, h))

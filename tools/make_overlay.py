@@ -61,5 +61,34 @@ def build(lang, variant):
     print("%s: %d lines changed -> %s" % (variant, changed, dst))
 
 
+MS_PARAGRAPH = ("Microsoft, Xbox, and the Xbox logo are either registered \r\n"
+                "trademarks or trademarks of Microsoft Corporation in the \r\n"
+                "U.S. and/or other countries and are used under license \r\n"
+                "from Microsoft.")
+# Same four lines, none longer than the screen's own, so the layout holds.
+PC_PARAGRAPH = ("This Windows PC version is an unofficial fan \r\n"
+                "recompilation, not affiliated with or endorsed by \r\n"
+                "Activision, Treyarch, Marvel, Columbia Pictures or \r\n"
+                "Microsoft. Windows is a trademark of Microsoft Corp.")
+
+
+def legal(variant):
+    """The boot legal screen (bonus\\LEGAL.xbs: logos, font, legalbox.txt)
+    with its Microsoft/Xbox paragraph made a Windows PC one. The package is
+    compressed, so it is rebuilt with tools/xbs.py rather than edited."""
+    import xbs
+    pkg = xbs.Package(os.path.join(GAME, "data", "bonus", "LEGAL.xbs"))
+    text = pkg.data("legalbox.txt").decode("latin-1")
+    assert text.count(MS_PARAGRAPH) == 1, "legalbox.txt changed"
+    pkg.put("legalbox.txt", text.replace(MS_PARAGRAPH, PC_PARAGRAPH).encode("latin-1"))
+    assert "xbox" not in pkg.data("legalbox.txt").decode("latin-1").lower()
+    dst = os.path.join(PROJECT, "overlay", variant, "data", "bonus", "LEGAL.xbs")
+    os.makedirs(os.path.dirname(dst), exist_ok=True)
+    pkg.write(dst)
+    print("%s: legal screen -> %s" % (variant, dst))
+
+
+sys.path.insert(0, HERE)
 for variant in ("pc", "pc_ps"):
     build("english", variant)
+    legal(variant)
