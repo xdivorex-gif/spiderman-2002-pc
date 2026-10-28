@@ -160,7 +160,14 @@ def reskin(text, mesh=None, sprays=()):
     return text
 
 
-RING_MESH, WAVE_MESH = "fxshkwringring", "fxshksringgrndwave"
+TRAILS = {
+    "r_hand": "255 255 255", "l_hand": "255 255 255",
+    "r_arm": "120 150 255", "l_arm": "120 150 255",
+    "r_foot": "192 192 255", "l_foot": "192 192 255",
+    "r_leg": "84 107 224", "l_leg": "84 107 224",
+}
+
+RING_MESH, WAVE_MESH ="fxshkwringring", "fxshksringgrndwave"
 RING_SPRAYS = ("sprayshksringflash", "sprayshksringgrndwave", "sprayshksringchunk",
                "sprayshksringglow", "sprayshksringblast", "sprayshksringwaveslow",
                "sprayshksringupchunk", "sprayshksringupring", "sprayshksringflysmoke",
@@ -178,6 +185,11 @@ ENTITIES = {
     "spideywebdomeadvexp.ent": (RING_MESH, RING_SPRAYS),
     "spideywebdomeleftover.ent": (WAVE_MESH, ()),
     "spideywebdomeadvleftover.ent": (WAVE_MESH, ()),
+    # every punch that lands (the engine makes fx\smhitreacta / b): his
+    # gauntlet-hit sparks
+    "smhitreacta.ent": (None, ("sprayshkgntsinrhitstar", "sprayshkgntsinrhitring")),
+    "smhitreactb.ent": (None, ("sprayshkgntsinrhitstar", "sprayshkgntsinrhitring",
+                               "sprayshkgntsinrhitrim")),
     # web gloves: electricity on the lower arms (ll/rl), nothing above
     "smshitassglove_ll.ent": limb("LL", "sprayshkhandelec"),
     "smshitassglove_rl.ent": limb("RL", "sprayshkhandelec"),
@@ -320,6 +332,12 @@ def main(out_dir):
         hero.put(name, text.encode("latin1"))
     fx = copy_effects(hero, boss, roots)
     print("effects: %d entries copied" % len(fx))
+    # motion trails: his gauntlets' blue-white glow instead of gold and brown
+    text = hero.data("shockspidey.enx").decode("latin1")
+    for part, rgb in TRAILS.items():
+        text, n = re.subn(r"(%s_trail_color)[ \t]+[\d \t]+" % part, r"\1 %s" % rgb, text)
+        assert n == 1, part
+    hero.put("shockspidey.enx", text.encode("latin1"))
     for name, fields in SPRAYS.items():
         hero.put(name, tune_spray(hero.data(name).decode("latin1"), fields).encode("latin1"))
     for name in BOLT_ITEMS:

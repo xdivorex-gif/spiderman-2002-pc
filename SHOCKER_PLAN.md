@@ -232,6 +232,10 @@ file-redirect hook. Step 4 is iterative tuning in game. Step 6 is open-ended.
   show: mesh parts show his ring mesh (`fxshkwringring`), particle systems
   his ring-blast sprays, leftovers his ground wave. `copy_effects` also
   follows texture names inside copied meshes.
+- **Shock punches and trails (2026-10-28).** Every landed hit makes
+  `fx\smhitreacta` / `fx\smhitreactb` (named in default.xbe); re-skinned in
+  place with his gauntlet-hit sparks. Motion trail colours in the
+  `spidermanX` block are his blue-white.
 - **Sound.** Level banks are `xboxsound\<lang>\<level>.XSH` (count at +4,
   0x60-byte entries, name at +0x0C) indexing `.XSD` sample data. His sounds
   (`sh_gauntlet_blast`, `sh_gauntlet_hit`, `sh_weakring`, `sh_strongring`,
