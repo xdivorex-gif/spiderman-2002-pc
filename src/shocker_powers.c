@@ -1,24 +1,33 @@
 /*
  * shocker_powers.c -- what the Shocker's moves do beyond what their data can.
  *
- * His tornado (the web dome, L2 + Triangle, src/shocker_input.c) draws the
- * enemies round him in like a magnet and hurts them while it lasts. Every
- * TICK_MS of it this calls the engine's radius damage round him
- * (sub_0012BBE0, under the script native apply_radius_damage: world
- * [0x4C06B8] as this; position, radius, damage, hit-the-hero): each AI in
- * range takes a blast (damage record type 6, sub_002B50B4), which throws
- * it along a direction from the centre out. While these calls run that
- * direction is turned round (sub_002B50B4_enter), so they are thrown in.
+ * Both go through the engine's radius damage (sub_0012BBE0, under the script
+ * native apply_radius_damage: world [0x4C06B8] as this; position, radius,
+ * damage, hit-the-hero): each AI in range takes a blast (sub_002B50B4 makes
+ * it, type 6), which throws it along a direction, normally from the centre
+ * out. While these calls run that direction is replaced
+ * (shocker_powers_damage_record):
+ *
+ *   His tornado (the web dome, L2 + Triangle, src/shocker_input.c) draws the
+ *   enemies round him in like a magnet and hurts them while it lasts: every
+ *   TICK_MS a blast round him, its direction turned round, so they are
+ *   thrown in.
+ *
+ *   His double-arm blast (L2 + Square) knocks down what it hits, backwards:
+ *   when the shot (guided at what is ahead) has reached it, blasts at points
+ *   along his facing, thrown along his facing -- away from him. A shot has
+ *   no knock-down of its own: thrown items cannot make an explosive hit.
  *
  * It runs on the game thread, from the script engine's entry
- * (shocker_powers_frame: many times a frame), at most every TICK_MS, and only
- * while the Shocker is worn and a level has a hero.
+ * (shocker_powers_frame: many times a frame), and only while the Shocker is
+ * worn and a level has a hero.
  */
 #include <windows.h>
 #include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <math.h>
 
 extern ptrdiff_t g_xbox_mem_offset;
 extern __declspec(thread) uint32_t g_eax, g_ecx, g_edx, g_esp, g_ebx, g_esi, g_edi;
@@ -38,10 +47,16 @@ int costume_worn_index(void);
 #define TORNADO_MS       4000       /* the dome's own time */
 #define TICK_MS          400
 #define TORNADO_RADIUS   8.0f
-#define TORNADO_DAMAGE   15.0f   /* a tick: 6 went unnoticed */
+#define TORNADO_DAMAGE   15.0f      /* a tick: 6 went unnoticed */
 
+#define BLAST_HIT_MS     250        /* the shot (60 m/s) has reached what is ahead */
+#define BLAST_DAMAGE     10.0f      /* each point; the shot does its own 60 */
+static const float s_blast_at_m[][2] = { { 3, 3 }, { 9, 4 }, { 16, 4 } };   /* ahead, radius */
+
+enum { DIR_KEEP, DIR_IN, DIR_ALONG };
 static volatile DWORD s_tornado_at, s_blast_at;
-static int s_pulling, s_busy;
+static int s_dir_mode, s_busy;
+static uint32_t s_along[3];         /* DIR_ALONG: the direction, float bits */
 
 void shocker_powers_tornado(void) { s_tornado_at = GetTickCount(); }
 void shocker_powers_blast(void)   { s_blast_at = GetTickCount(); }
@@ -51,6 +66,14 @@ static uint32_t fbits(float f)
     uint32_t u;
     memcpy(&u, &f, 4);
     return u;
+}
+
+static float gfloat(uint32_t va)
+{
+    uint32_t u = GUEST32(va);
+    float f;
+    memcpy(&f, &u, 4);
+    return f;
 }
 
 /* Call a recompiled function as the game would: `args` pushed (the first
@@ -90,59 +113,111 @@ static uint32_t hero_entity(uint32_t *world)
     return h;
 }
 
+/* The hero's position (his world matrix's last row, sub_0015B8E0), 0 if
+ * none. The row before it is the way he faces. */
+static uint32_t hero_pos(uint32_t hero)
+{
+    uint32_t pos = guest_call(sub_0015B8E0, hero, NULL, 0);
+    return pos && pos < 0x04000000 ? pos : 0;
+}
+
+static void radius_damage(uint32_t world, float x, float y, float z, float radius,
+                          float damage, int mode)
+{
+    uint32_t args[6] = { fbits(x), fbits(y), fbits(z), fbits(radius), fbits(damage), 0 };
+    s_dir_mode = mode;
+    guest_call(sub_0012BBE0, world, args, 6);
+    s_dir_mode = DIR_KEEP;
+}
+
 static void tornado_tick(uint32_t world, uint32_t hero)
 {
-    uint32_t pos = guest_call(sub_0015B8E0, hero, NULL, 0), args[6];
-    if (!pos || pos >= 0x04000000)
+    uint32_t pos = hero_pos(hero);
+    if (pos)
+        radius_damage(world, gfloat(pos), gfloat(pos + 4), gfloat(pos + 8),
+                      TORNADO_RADIUS, TORNADO_DAMAGE, DIR_IN);
+}
+
+static void blast_hit(uint32_t world, uint32_t hero)
+{
+    uint32_t pos = hero_pos(hero), fwd;
+    float x, y, z, fx, fz, len;
+    int k;
+
+    if (!pos)
         return;
-    args[0] = GUEST32(pos);
-    args[1] = GUEST32(pos + 4);
-    args[2] = GUEST32(pos + 8);
-    args[3] = fbits(TORNADO_RADIUS);
-    args[4] = fbits(TORNADO_DAMAGE);
-    args[5] = 0;                    /* not the hero */
-    s_pulling = 1;
-    guest_call(sub_0012BBE0, world, args, 6);
-    s_pulling = 0;
+    fwd = pos - 0x10;
+    fx = gfloat(fwd);
+    fz = gfloat(fwd + 8);
+    len = (float)sqrt(fx * fx + fz * fz);
+    if (len < 0.01f)
+        return;
+    fx /= len;
+    fz /= len;
+    x = gfloat(pos);
+    y = gfloat(pos + 4);
+    z = gfloat(pos + 8);
+    s_along[0] = fbits(fx);
+    s_along[1] = fbits(0.0f);
+    s_along[2] = fbits(fz);
+    for (k = 0; k < (int)(sizeof s_blast_at_m / sizeof s_blast_at_m[0]); k++)
+        radius_damage(world, x + fx * s_blast_at_m[k][0], y + 1.0f, z + fz * s_blast_at_m[k][0],
+                      s_blast_at_m[k][1], BLAST_DAMAGE, DIR_ALONG);
 }
 
 /* The script engine's entry (sub_00051C00_enter, recomp_manual.c): the
  * game thread, many times a frame. */
 void shocker_powers_frame(void)
 {
-    static DWORD last;
-    DWORD t = GetTickCount(), since;
+    static DWORD last_tick, blast_done;
+    DWORD t = GetTickCount();
     uint32_t world, hero;
+    int tornado, blast;
 
-    if (s_busy || t - last < TICK_MS || !s_tornado_at)
+    if (s_busy || (!s_tornado_at && !s_blast_at))
         return;
-    since = t - s_tornado_at;
-    if (since < TORNADO_DELAY_MS || since > TORNADO_DELAY_MS + TORNADO_MS)
+    tornado = s_tornado_at && t - last_tick >= TICK_MS
+              && t - s_tornado_at >= TORNADO_DELAY_MS
+              && t - s_tornado_at <= TORNADO_DELAY_MS + TORNADO_MS;
+    blast = s_blast_at && blast_done != s_blast_at && t - s_blast_at >= BLAST_HIT_MS;
+    if (!tornado && !blast)
         return;
     if (costume_worn_index() != SHOCKER_INDEX || !(hero = hero_entity(&world)))
         return;
-    last = t;
     s_busy = 1;                     /* the damage may run scripts: no re-entry */
-    tornado_tick(world, hero);
+    if (tornado) {
+        last_tick = t;
+        tornado_tick(world, hero);
+    }
+    if (blast) {
+        blast_done = s_blast_at;
+        if (t - s_blast_at < BLAST_HIT_MS + 500)     /* not a stale one */
+            blast_hit(world, hero);
+    }
     s_busy = 0;
 }
 
 /* sub_002B50B4 (sub_002B50B4_enter, recomp_manual.c; cdecl) is called all
  * over the game, thousands of times a second; the radius damage makes its
  * blast with it as (6, centre, direction, 0, 0x3F8570, 0x4C0714). Only
- * those, and only in the tornado's own calls, have the direction turned
- * round: thrown in, not out. (Logging every call for a while after the
- * blast cost half the frame rate.) */
+ * those, and only in this file's own calls, have the direction replaced.
+ * (Logging every call for a while after the blast cost half the frame
+ * rate.) */
 void shocker_powers_damage_record(void)
 {
     uint32_t dir;
     int k;
 
-    if (!s_pulling || GUEST32(g_esp + 4) != 6 || GUEST32(g_esp + 24) != 0x004C0714u)
+    if (s_dir_mode == DIR_KEEP || GUEST32(g_esp + 4) != 6
+        || GUEST32(g_esp + 24) != 0x004C0714u)
         return;
     dir = GUEST32(g_esp + 12);
     if (!dir || dir >= 0x04000000)
         return;
-    for (k = 0; k < 3; k++)
-        GUEST32(dir + 4 * k) ^= 0x80000000u;
+    for (k = 0; k < 3; k++) {
+        if (s_dir_mode == DIR_IN)
+            GUEST32(dir + 4 * k) ^= 0x80000000u;
+        else
+            GUEST32(dir + 4 * k) = s_along[k];
+    }
 }
