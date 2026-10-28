@@ -36,6 +36,15 @@ problem; look at why pacing starts late only if a timed scene needs it.
 DLSS/frame generation: not built in (no motion vectors, DLSS-G needs D3D12);
 the launcher points at NVIDIA Smooth Motion / Lossless Scaling instead.
 
+**HUD art upscaled (2026-10-28):** tools\hud_upscale.py finds the head icons
+next to the health bar (ib_*, 45 of them, each hero's head_icon and stealth
+variant plus the bosses'), the compass (compass_*, compas_*, e_compass_bace)
+and the height meter (altimiter*, alt_*) in every package, decodes them with
+a Python port of d3d8_dxt_decode_texel, names them by gpu_backend.c's FNV-1a
+texel hash (checked: 12 matched a RECOMP_GPU_TEXDUMP run exactly) and
+upscales x4 with Real-ESRGAN (anime model) into texpack\ and
+build\Release	expack\: 59 images. Skipped: alt_sp_001 (uncompressed).
+
 **Done 2026-10-25 (second session):**
 - PlayStation prompts: every button icon is one 512x64 strip (texels hash
   73E8ECF1; cells listed in tools\make_ps_buttons.ps1). gpu_backend.c
