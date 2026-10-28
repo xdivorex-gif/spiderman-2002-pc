@@ -14,8 +14,8 @@
  * Only while the Shocker is worn (costume_worn_index). L2 -- the left
  * trigger, analog byte 6 of the report -- is kept from the game while held;
  * a short tap with no face button is passed on afterwards, so what L2 does
- * in the game still works. A press is played as the stick held to the
- * direction, the web button pressed a moment later, then both let go.
+ * in the game still works. A press is played as the web button held, the
+ * stick pushed to the direction a moment later, then both let go.
  *
  * Called from costume_panel.c's report filter (there is one filter), on the
  * USB thread, for pad 0, while the game is not paused.
@@ -35,9 +35,12 @@ int costume_worn_index(void);
 #define AN_LT 6
 #define HELD(r, i) ((r)[4 + (i)] > 0x40)
 
-#define STICK_MS 220                /* the direction, from the start */
-#define WEB_FROM 40                 /* the web button, from .. to */
-#define WEB_TO   170
+/* The web button first and the direction while it is held ("Triangle +
+ * right"). Direction first turned him to face it, so every combo came out
+ * as a plain shot ahead. */
+#define WEB_MS     260              /* the web button, from the start */
+#define STICK_FROM 60               /* the direction, from .. to */
+#define STICK_TO   240
 #define TAP_MS   250                /* a shorter L2 hold with no blast is a tap */
 #define PULSE_MS 100
 
@@ -100,10 +103,11 @@ void shocker_input_filter(uint8_t *r)
 
     if (s_macro >= 0) {
         DWORD dt = t - s_macro_t0;
-        if (dt < STICK_MS) {
-            put_stick(r, s_map[s_macro].x, s_map[s_macro].y);
-            if (dt >= WEB_FROM && dt < WEB_TO)
-                r[4 + AN_Y] = 0xFF;
+        if (dt < WEB_MS) {
+            r[4 + AN_Y] = 0xFF;
+            put_stick(r, 0, 0);
+            if (dt >= STICK_FROM && dt < STICK_TO)
+                put_stick(r, s_map[s_macro].x, s_map[s_macro].y);
         } else {
             s_macro = -1;
         }
