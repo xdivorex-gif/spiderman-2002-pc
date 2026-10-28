@@ -45,19 +45,36 @@ static const struct { const char *find, *with; } s_patches[] = {
 };
 
 /* Replace `find` (n bytes, `unit` bytes a character) at p inside a string
- * that runs to its terminator, by `with`, shifting the tail up. */
-static void splice(uint8_t *p, const uint8_t *end, size_t n, const char *with, int unit)
+ * that runs to its terminator, by `with`, shifting the tail up. 0 when the
+ * match is not in a string of its own and is left alone.
+ *
+ * Only a terminated string is touched: the text also sits in the menu
+ * script's source (bonus\MENU.xbs menu.sx), quoted lines with no
+ * terminators, whose string table the script linker reads by position.
+ * Shifting 4 KB of that up by ten bytes cut load_most_recent() down to
+ * "loa" whenever a pass landed between the script's unpacking and its
+ * linking: the autoload then called a native that was never linked and
+ * waited on it for ever ("Autoloading Spider-Man saved game data"). */
+static int splice(uint8_t *p, const uint8_t *end, size_t n, const char *with, int unit)
 {
     size_t wn = strlen(with), i, tail = 0;
     uint8_t *after = p + n;
+    int terminated = 0;
 
-    /* The tail: up to and including the terminator (bounded). */
-    while (after + tail + unit <= end && tail < 4096) {
+    /* The tail: up to and including the terminator, which must come soon
+     * and before any quote (script source, not a string). */
+    while (after + tail + unit <= end && tail < 512) {
         int zero = after[tail] == 0 && (unit == 1 || after[tail + 1] == 0);
+        if (after[tail] == '"' && (unit == 1 || after[tail + 1] == 0))
+            return 0;
         tail += unit;
-        if (zero)
+        if (zero) {
+            terminated = 1;
             break;
+        }
     }
+    if (!terminated)
+        return 0;
     for (i = 0; i < wn; i++) {
         p[i * unit] = (uint8_t)with[i];
         if (unit == 2)
@@ -66,6 +83,7 @@ static void splice(uint8_t *p, const uint8_t *end, size_t n, const char *with, i
     memmove(p + wn * unit, after, tail);
     /* Clear what the shorter string left behind. */
     memset(p + wn * unit + tail, 0, n - wn * unit);
+    return 1;
 }
 
 static int patch_pass(uint8_t *ram)
@@ -85,8 +103,7 @@ static int patch_pass(uint8_t *ram)
         for (p = ram; p + n <= end; p++) {
             if (*p != (uint8_t)f[0] || memcmp(p, f, n) != 0)
                 continue;
-            splice(p, end, n, s_patches[k].with, 1);
-            done++;
+            done += splice(p, end, n, s_patches[k].with, 1);
         }
         /* UTF-16LE */
         if (2 * n > sizeof wide)
@@ -95,8 +112,7 @@ static int patch_pass(uint8_t *ram)
         for (p = ram; p + 2 * n <= end; p += 2) {
             if (*p != wide[0] || memcmp(p, wide, 2 * n) != 0)
                 continue;
-            splice(p, end, 2 * n, s_patches[k].with, 2);
-            done++;
+            done += splice(p, end, 2 * n, s_patches[k].with, 2);
         }
     }
     return done;

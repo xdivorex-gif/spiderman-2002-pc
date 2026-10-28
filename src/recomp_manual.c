@@ -104,6 +104,148 @@ void sub_000F0690_enter(void)
     costume_level_start(g_ecx);
 }
 
+/* ── The title's own warnings ──────────────────────────────── */
+
+/*
+ * sub_00013DE0 is the title's debug print (cdecl: format, arguments), as in
+ * "Script bug.  Could not find sound source for %s". The retail build prints
+ * nowhere. RECOMP_GAME_LOG=1 sends each distinct message to stderr as
+ * "[GAME] ...": %s reads a guest string, the integer conversions a dword,
+ * %f a double (two dwords); anything else is printed raw.
+ */
+#include <stdlib.h>
+#include <string.h>
+
+extern __declspec(thread) uint32_t g_esp;
+
+static const char *guest_str(uint32_t va)
+{
+    if (!va || va >= 0x04000000)
+        return "(null)";
+    return (const char *)((uint8_t *)g_xbox_mem_offset + va);
+}
+
+static void game_log(const char *tag)
+{
+    static int on = -1;
+    static uint32_t seen[256];
+    static int nseen;
+    char out[512];
+    const char *f;
+    uint32_t arg = g_esp + 8, h = 2166136261u;
+    size_t o = 0;
+    int i;
+
+    if (on < 0) {
+        const char *e = getenv("RECOMP_GAME_LOG");
+        on = e && *e && *e != '0';
+    }
+    if (!on)
+        return;
+    f = guest_str(GUEST32(g_esp + 4));
+    while (*f && o < sizeof out - 64) {
+        char spec[16];
+        size_t k = 0;
+        if (*f != '%') {
+            out[o++] = *f++;
+            continue;
+        }
+        spec[k++] = *f++;
+        while (*f && strchr("-+ #0123456789.l", *f) && k < sizeof spec - 2)
+            spec[k++] = *f++;
+        spec[k++] = *f;
+        spec[k] = 0;
+        switch (*f) {
+        case 's':
+            o += _snprintf(out + o, sizeof out - o - 1, spec, guest_str(GUEST32(arg)));
+            arg += 4;
+            break;
+        case 'd': case 'i': case 'u': case 'x': case 'X': case 'c':
+            o += _snprintf(out + o, sizeof out - o - 1, spec, GUEST32(arg));
+            arg += 4;
+            break;
+        case 'f': case 'g': case 'e': {
+            double v;
+            uint32_t lo = GUEST32(arg), hi = GUEST32(arg + 4);
+            uint64_t bits = ((uint64_t)hi << 32) | lo;
+            memcpy(&v, &bits, sizeof v);
+            o += _snprintf(out + o, sizeof out - o - 1, spec, v);
+            arg += 8;
+            break;
+        }
+        case '%':
+            out[o++] = '%';
+            break;
+        default:
+            break;
+        }
+        if (*f)
+            f++;
+        if (o > sizeof out - 64)
+            break;
+    }
+    out[o] = 0;
+    /* once per distinct message: a warning in a loop would bury the log */
+    for (i = 0; out[i]; i++)
+        h = (h ^ (uint8_t)out[i]) * 16777619u;
+    for (i = 0; i < nseen; i++)
+        if (seen[i] == h)
+            return;
+    if (nseen < 256)
+        seen[nseen++] = h;
+    fprintf(stderr, "[GAME%s] %s%s", tag, out, (o && out[o - 1] == '\n') ? "" : "\n");
+    fflush(stderr);
+}
+
+void sub_00013DE0_enter(void)
+{
+    game_log("");
+}
+
+/* sub_00013E20 is its error report: the same arguments, then a debug trap.
+ * The script linker (sub_000505F0) sends "<name> not found." here when a
+ * script calls a native nobody has registered. */
+void sub_00013E20_enter(void)
+{
+    game_log(" ERROR");
+}
+
+/* The autoload stall: the save script's native call links to nothing, as
+ * its name comes out of the script string table cut short ("loa" for
+ * load_most_recent()). RECOMP_GAME_LOG also shows each script load and
+ * link with its host thread, to see whether two overlap. sub_0004DA60
+ * loads a script (this = the script); sub_000505F0 (cdecl: stream,
+ * script) links its natives, names from the string table at
+ * [[0x4C06B8]+0x170+0x20], 8 bytes an entry. */
+static int script_log_on(void)
+{
+    static int on = -1;
+    if (on < 0) {
+        const char *e = getenv("RECOMP_GAME_LOG");
+        on = e && *e && *e != '0';
+    }
+    return on;
+}
+
+void sub_0004DA60_enter(void)
+{
+    if (script_log_on())
+        fprintf(stderr, "[SCRIPT] load  tid %5lu this %08X\n",
+                GetCurrentThreadId(), g_ecx);
+}
+
+void sub_000505F0_enter(void)
+{
+    uint32_t pool, table = 0;
+    if (!script_log_on())
+        return;
+    pool = GUEST32(0x4C06B8);
+    if (pool && pool < 0x04000000)
+        table = GUEST32(pool + 0x170 + 0x20);
+    fprintf(stderr, "[SCRIPT] link  tid %5lu stream %08X script %08X strings %08X\n",
+            GetCurrentThreadId(), GUEST32(g_esp + 4), GUEST32(g_esp + 8), table);
+}
+
 /* ── Manual function overrides ─────────────────────────────── */
 
 /*

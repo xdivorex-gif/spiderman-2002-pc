@@ -520,9 +520,15 @@ def main(out_dir):
         roots.append("sprayshkhandtrail")
     hero.put("shockspidey.ent", ent.encode("latin1"))
     copy_effects(hero, boss, ["sprayshkhandtrail"])
-    for name in ("spiderman_enx.inc", "impact_web.enx", "adv_impact_web.enx"):
-        hero.put(name, resound(hero.data(name).decode("latin1")).encode("latin1"))
-    build_bank(out_dir)
+    # His sounds are off for now (resound, build_bank). The menu bank with
+    # them appended made the menu's own sounds play at random levels, mostly
+    # far too quiet (back to normal with the original bank), and his never
+    # played in a level anyway. The bank the build wrote is removed, so a
+    # rebuild cannot leave it behind.
+    bank = os.path.join(out_dir, "data", "xboxsound", "ENGLISH")
+    for f in ("menu.XSH", "menu.XSD"):
+        if os.path.exists(os.path.join(bank, f)):
+            os.remove(os.path.join(bank, f))
     levels = {}
     for name, (level, src) in TEXTURES.items():
         if level not in levels:
