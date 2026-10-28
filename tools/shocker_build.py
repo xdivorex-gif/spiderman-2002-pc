@@ -99,16 +99,17 @@ ANIMS = {
     "SmCrchWebYankB": "ShkYankPull", "SmCrchWebYankR": "ShkYankPull",
     "SmWebCowboy": "ShkSpinSwavBlst",
     # the rest of standing and moving: fidgets look around, crouching is his
-    # stance, run starts / stops / turns his run and idle
+    # stance, run starts and stops his run and idle
     "SmIdl2BoredLook": "ShkFacingL", "SmIdl2BoredCrchLook": "ShkFacingL",
-    "SmIdlTrn180": "ShkFacingL",
     "SmCrchIdl": "ShkIdl", "SmCrch2Idl": "ShkIdl", "SmIdl2Crch": "ShkIdl",
-    "SmIdl2Run": "ShkRun", "SmLnd2Run": "ShkRun", "SmRunTurnTrn": "ShkRun",
+    "SmIdl2Run": "ShkRun", "SmLnd2Run": "ShkRun",
     "SmRun2IdlMid": "ShkIdl", "SmRun2IdlLLegF": "ShkIdl", "SmRun2IdlRLegF": "ShkIdl",
     "SmRun2Idl_NoMove": "ShkIdl",
     "SmRun2LeapFlip": "ShkShockJmpFLnch", "SmRun1mLedgeU": "ShkShockJmpFLnd",
-    # jumps: the double jump and the turn in the air are his shock jump flight
-    "SmJmpFlipJmp": "ShkShockJmpFFly", "SmJmpTurn180": "ShkShockJmpBFly",
+    # jumps: the double jump is his shock jump flight. The 180-degree turns
+    # (SmIdlTrn180, SmRunTurnTrn, SmJmpTurn180) stay Spider-Man's: the turn is
+    # in the animation, and his clips do not turn, so he ended facing backwards
+    "SmJmpFlipJmp": "ShkShockJmpFFly",
     # web shots from the air or a crouch: his blast
     "SmJmpImpactWeb": "ShkWeakBlast", "SmCrchImpactWeb": "ShkWeakBlast",
     # hits and deaths
