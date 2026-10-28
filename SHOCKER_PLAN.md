@@ -256,6 +256,23 @@ file-redirect hook. Step 4 is iterative tuning in game. Step 6 is open-ended.
   shorter run stride. Gauntlet aura: the boss's always-on `TRAILR`/`TRAILL`
   hand trails added under the hero's hand bones (a bone's data closes with
   two chunkends; children follow).
+- **His sounds (2026-10-28).** A level loads its own bank and the menu
+  bank, which holds the player's sounds and stays loaded. `build_bank`
+  appends 17 of his sounds from subway_d's bank to menu.XSH/XSD (+410 KB:
+  gauntlet blast and hit, weak and strong ring, tornado, electric arc,
+  heavy footsteps, battle taunts shaiv010-016), served from the overlay;
+  `resound` points the hero's sound groups at them (web shots and launches
+  = blast, impacts and punches = hit, dome = weak ring, burst = strong
+  ring, gloves and yank line = arc, footsteps = heavy, jump = blast off and
+  ring on landing, lasso = tornado, taunt group = his taunts). Pain and
+  death are still Spider-Man's voice. No dodge sound group exists.
+- **The rest of the moves.** Fidgets and idle turns = `ShkFacingL`,
+  crouching = his stance, run starts/stops/turns = run / idle, hurdle and
+  ledge = shock jump, double jump = shock jump flight, air turn = backward
+  flight, air and crouch web shots = blast, crouch hit, fall deaths;
+  every combo move is his now (evasive flips = backward shock jump, prone
+  and sneak kicks = blasts). Left: lock-on strafing (`JOCKEY_*`; his are
+  10-bone partials) and pressing switches.
 - **Sound.** Level banks are `xboxsound\<lang>\<level>.XSH` (count at +4,
   0x60-byte entries, name at +0x0C) indexing `.XSD` sample data. His sounds
   (`sh_gauntlet_blast`, `sh_gauntlet_hit`, `sh_weakring`, `sh_strongring`,

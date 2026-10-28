@@ -98,6 +98,28 @@ ANIMS = {
     "SmWebYankL": "ShkYankPull", "SmWebYankR": "ShkYankPull",
     "SmCrchWebYankB": "ShkYankPull", "SmCrchWebYankR": "ShkYankPull",
     "SmWebCowboy": "ShkSpinSwavBlst",
+    # the rest of standing and moving: fidgets look around, crouching is his
+    # stance, run starts / stops / turns his run and idle
+    "SmIdl2BoredLook": "ShkFacingL", "SmIdl2BoredCrchLook": "ShkFacingL",
+    "SmIdlTrn180": "ShkFacingL",
+    "SmCrchIdl": "ShkIdl", "SmCrch2Idl": "ShkIdl", "SmIdl2Crch": "ShkIdl",
+    "SmIdl2Run": "ShkRun", "SmLnd2Run": "ShkRun", "SmRunTurnTrn": "ShkRun",
+    "SmRun2IdlMid": "ShkIdl", "SmRun2IdlLLegF": "ShkIdl", "SmRun2IdlRLegF": "ShkIdl",
+    "SmRun2Idl_NoMove": "ShkIdl",
+    "SmRun2LeapFlip": "ShkShockJmpFLnch", "SmRun1mLedgeU": "ShkShockJmpFLnd",
+    # jumps: the double jump and the turn in the air are his shock jump flight
+    "SmJmpFlipJmp": "ShkShockJmpFFly", "SmJmpTurn180": "ShkShockJmpBFly",
+    # web shots from the air or a crouch: his blast
+    "SmJmpImpactWeb": "ShkWeakBlast", "SmCrchImpactWeb": "ShkWeakBlast",
+    # hits and deaths
+    "SmCrchIdlHit": "ShkHitF", "SmFFall": "ShkFall", "SmFFallLnd": "ShkBlowFLnd",
+    # the rest of the combos: evasive flips his backward shock jump, prone,
+    # sneak and web kicks his blasts, extra punches his shock punch
+    "SmPJFlip": "ShkShockJmpBLnch", "SmKJBckFlip": "ShkShockJmpBLnch",
+    "SmPunProne": "ShkWeakBlastHit", "SmKckProne": "ShkWeakBlastHit",
+    "SmKckProne2": "ShkWeakBlastHit", "SmKckWebChest": "ShkWeakBlastHit",
+    "SmKckSneak": "ShkPun2", "SmKckSneakSlam": "ShkStandBlastHit",
+    "SmPunLUpper": "ShkPun2", "SmPunRHook": "ShkPun2",
 }
 
 # An animation ends with its events: (seconds, flag) pairs, offset at +0x4C.
@@ -311,6 +333,80 @@ def copy_effects(hero, src, roots):
     return sorted(found)
 
 
+# Sounds. A level loads its own bank and the menu bank, which holds the
+# player's sounds (web shots, dome, footsteps, grunts) and stays loaded; his
+# are only in subway_d's. data\xboxsound\<lang>\<bank>.XSH: three dwords
+# (157, 0, entry count), then 0x60-byte entries: name[32], 1, offset and
+# size in the .XSD, flags, volume / pitch / distances, an Xbox ADPCM
+# WAVEFORMATEX. They are appended to the menu bank, and the hero's sound
+# groups renamed to them.
+SOUND_BANK = os.path.join(os.path.dirname(GAME), "data", "xboxsound", "ENGLISH")
+HIS_SOUNDS = ("sh_gauntlet_blast", "sh_gauntlet_hit", "sh_tornado", "sh_weakring",
+              "sh_strongring", "elecarc1", "footsteps_heavy1", "footsteps_heavy2",
+              "footsteps_heavy3", "footsteps_heavy4", "shaiv010", "shaiv011",
+              "shaiv012", "shaiv013", "shaiv014", "shaiv015", "shaiv016")
+SOUNDS = {
+    "webshot1": "sh_gauntlet_blast", "webshot2": "sh_gauntlet_blast",
+    "webshot3": "sh_gauntlet_blast", "weblaunch": "sh_gauntlet_blast",
+    "weblaunch_advanced": "sh_gauntlet_blast",
+    "webimpact": "sh_gauntlet_hit", "weblaunch_advanced_explo": "sh_gauntlet_hit",
+    "punch_sm": "sh_gauntlet_hit", "punch_sm2": "sh_gauntlet_hit",
+    "webdome": "sh_weakring", "webdome2": "sh_weakring", "webbust": "sh_strongring",
+    "webgloves": "elecarc1", "webgloves2": "elecarc1",
+    "webtie": "elecarc1", "webyoyo": "elecarc1",
+    "sm_ftsteps1": "footsteps_heavy1", "sm_ftsteps2": "footsteps_heavy2",
+    "sm_ftsteps3": "footsteps_heavy3", "sm_ftsteps4": "footsteps_heavy4",
+    # his jump is a blast off the ground and a ring on landing
+    "smaiv059": "sh_gauntlet_blast", "smaiv060": "sh_gauntlet_blast",
+    "smaiv061": "sh_gauntlet_blast", "smaiv062": "sh_gauntlet_blast",
+    "sm_landing": "sh_weakring",
+}
+TAUNTS = ("shaiv010", "shaiv011", "shaiv012", "shaiv013", "shaiv014", "shaiv015", "shaiv016")
+
+
+def bank_entries(path):
+    d = open(path, "rb").read()
+    n = struct.unpack_from("<I", d, 8)[0]
+    return d[:12], [bytearray(d[12 + i * 0x60:12 + (i + 1) * 0x60]) for i in range(n)]
+
+
+def build_bank(out_dir):
+    """menu.XSH / .XSD with his sounds appended."""
+    hdr, menu = bank_entries(os.path.join(SOUND_BANK, "menu.XSH"))
+    _, boss = bank_entries(os.path.join(SOUND_BANK, "subway_d.XSH"))
+    data = bytearray(open(os.path.join(SOUND_BANK, "menu.XSD"), "rb").read())
+    boss_data = open(os.path.join(SOUND_BANK, "subway_d.XSD"), "rb").read()
+    by_name = {e[:32].split(b"\0")[0].decode(): e for e in boss}
+    for name in HIS_SOUNDS:
+        e = bytearray(by_name[name])
+        off, size = struct.unpack_from("<II", e, 0x24)
+        struct.pack_into("<I", e, 0x24, len(data))
+        data += boss_data[off:off + size]
+        menu.append(e)
+    hdr = bytearray(hdr)
+    struct.pack_into("<I", hdr, 8, len(menu))
+    dst = os.path.join(out_dir, "data", "xboxsound", "ENGLISH")
+    os.makedirs(dst, exist_ok=True)
+    open(os.path.join(dst, "menu.XSH"), "wb").write(bytes(hdr) + b"".join(menu))
+    open(os.path.join(dst, "menu.XSD"), "wb").write(data)
+    print("sound: %d of his sounds in the menu bank (+%d KB)"
+          % (len(HIS_SOUNDS), (len(data) - os.path.getsize(os.path.join(SOUND_BANK, "menu.XSD"))) // 1024))
+
+
+def resound(text):
+    """Point 'file X' at his sounds, and give the taunt groups his taunts."""
+    lower = {k.lower(): v for k, v in SOUNDS.items()}
+    text = re.sub(r"(\bfile[ \t]+)(\w+)",
+                  lambda m: m.group(1) + lower.get(m.group(2).lower(), m.group(2)), text)
+    # the yank's lasso is his spin: its whoosh (shared with every attack)
+    # becomes his tornado in that group only
+    text = re.sub(r"(name rodeo_yank\b.*?file[ \t]+)whoosh3", r"\1sh_tornado", text,
+                  count=1, flags=re.S)
+    taunts = "".join("\t\t\tsound:\r\n\t\t\t\tfile %s\r\n\t\t\t\tfreq 1.0\r\n\t\t\tchunkend\r\n" % t
+                     for t in TAUNTS)
+    return re.sub(r"(name taunt\r?\n\s*history -?\d+\r?\n\s*voice\r?\n)", r"\1" + taunts.replace("\\", "\\\\"), text)
+
+
 def dxt5_from_brightness(dds):
     """A DXT1 texture as DXT5 with alpha = brightness (glowing art on
     black), so it blends where the original had alpha."""
@@ -423,6 +519,9 @@ def main(out_dir):
         roots.append("sprayshkhandtrail")
     hero.put("shockspidey.ent", ent.encode("latin1"))
     copy_effects(hero, boss, ["sprayshkhandtrail"])
+    for name in ("spiderman_enx.inc", "impact_web.enx", "adv_impact_web.enx"):
+        hero.put(name, resound(hero.data(name).decode("latin1")).encode("latin1"))
+    build_bank(out_dir)
     levels = {}
     for name, (level, src) in TEXTURES.items():
         if level not in levels:
