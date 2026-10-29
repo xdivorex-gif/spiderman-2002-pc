@@ -199,6 +199,12 @@ static int game_paused(void)
     return app && GUEST8(app + SM_APP_PAUSED);
 }
 
+/* For gpu_backend.c's widescreen 2D: the pause menu is laid out as a menu. */
+int costume_game_paused(void)
+{
+    return game_paused();
+}
+
 /* ── Pressing the pause menu's Restart Level ───────────────────── */
 
 /* RECOMP_COSTUME_RESTART: the presses, comma-separated: up down left right

@@ -1460,39 +1460,69 @@ static void be_draw_inner(const Nv2aSurface *s, const Nv2aBatch *b);
 /* Widescreen's 2D (RECOMP_HOR_PLUS, settings.c: the screen's width over
  * 4:3). The 3D is drawn that much wider (Hor+, recomp_manual.c) into the
  * 640x480 frame stretched to the screen; the HUD and menus, drawn in screen
- * pixels (every vertex rhw 1), would come out that much wider. Each such
- * draw to the 640-wide screen is narrowed by the factor round the centre,
- * the 2D keeping its shape in the middle 4:3 of the screen. All alike:
- * pinning each draw to its nearest edge pulled apart what is drawn in
- * pieces (a backdrop's tiles, a box's sides). A single draw across the
- * whole width (a fade, a flash) is left to cover it. */
-static int hud_widescreen(const Nv2aSurface *s, const Nv2aVertex *v, Nv2aVertex *out, UINT n)
+ * pixels (every vertex rhw 1), come out that much wider. As on the PC
+ * version (checked full-screen at 16:9), only the HUD in play is drawn its
+ * own shape -- the head icon round -- each piece narrowed by the factor and
+ * kept by its own edge, so it stays where it was; the menus and the pause
+ * menu fill the screen, stretched, as there. "In play": 3D drawn on the
+ * screen in the last 250 ms and the game not paused. A draw across most of
+ * the width (a fade, a flash) is left to cover the screen.
+ */
+int costume_game_paused(void);      /* costume_panel.c */
+
+static int hud_widescreen(const Nv2aSurface *s, const Nv2aRenderState *rs,
+                          const Nv2aVertex *v, Nv2aVertex *out, UINT n)
 {
     static float f = -1.0f;
-    float lo = 1e9f, hi = -1e9f, w = (float)s->width;
+    static DWORD last_3d;               /* when the screen last had 3D drawn on it */
+    float lo = 1e9f, hi = -1e9f, w = (float)s->width, mid;
+    int pin;
     UINT i;
 
     if (f < 0.0f) {
-        /* RECOMP_HUD_WIDE=1 while it is worked on: as it is, the menus came
-         * out in uneven strips */
-        const char *e = getenv("RECOMP_HOR_PLUS"), *on = getenv("RECOMP_HUD_WIDE");
-        f = e && *e && on && *on == '1' ? (float)atof(e) : 0.0f;
+        const char *e = getenv("RECOMP_HOR_PLUS");
+        f = e && *e ? (float)atof(e) : 0.0f;
         if (f <= 1.0f || f > 4.0f)
             f = 0.0f;
     }
-    if (f == 0.0f || s->width != 640 || s->height != 480 || !n)
+    if (f == 0.0f || s->width != 640 || s->height != 480 || !n || !rs)
         return 0;
     for (i = 0; i < n; i++) {
-        if (v[i].rhw != 1.0f)
+        if (v[i].rhw != 1.0f) {
+            last_3d = GetTickCount();
             return 0;
+        }
         if (v[i].x < lo) lo = v[i].x;
         if (v[i].x > hi) hi = v[i].x;
     }
-    if (lo <= 1.0f && hi >= w - 1.0f)
+    {
+        static int nlog = -1;
+        if (nlog < 0)
+            nlog = getenv("RECOMP_HUD_LOG") ? 300 : 0;
+        if (nlog > 0 && hi - lo > 40.0f) {
+            float ylo = 1e9f, yhi = -1e9f;
+            for (i = 0; i < n; i++) {
+                if (v[i].y < ylo) ylo = v[i].y;
+                if (v[i].y > yhi) yhi = v[i].y;
+            }
+            fprintf(stderr, "[HUD2D] n %u x %.1f..%.1f y %.1f..%.1f blend %u src %X dst %X z %.3f tex %d\n",
+                    n, lo, hi, ylo, yhi, rs->blend_enable, rs->blend_src, rs->blend_dst,
+                    v[0].z, 0);
+            nlog--;
+        }
+    }
+    pin = GetTickCount() - last_3d < 250 && !costume_game_paused();
+    if (!pin || hi - lo >= w * 0.75f)
         return 0;
+    mid = (lo + hi) * 0.5f;
     for (i = 0; i < n; i++) {
         out[i] = v[i];
-        out[i].x = w * 0.5f + (v[i].x - w * 0.5f) / f;
+        if (mid < w / 3.0f)
+            out[i].x = v[i].x / f;
+        else if (mid > w * 2.0f / 3.0f)
+            out[i].x = w - (w - v[i].x) / f;
+        else
+            out[i].x = w * 0.5f + (v[i].x - w * 0.5f) / f;
     }
     return 1;
 }
@@ -1645,7 +1675,7 @@ static void be_draw_inner(const Nv2aSurface *s, const Nv2aBatch *b)
                                        s_vb_used ? D3D11_MAP_WRITE_NO_OVERWRITE
                                                  : D3D11_MAP_WRITE_DISCARD, 0, &m)))
         return;
-    if (!hud_widescreen(s, b->vertices, (Nv2aVertex *)((uint8_t *)m.pData + s_vb_used),
+    if (!hud_widescreen(s, rs, b->vertices, (Nv2aVertex *)((uint8_t *)m.pData + s_vb_used),
                         bytes / stride))
         memcpy((uint8_t *)m.pData + s_vb_used, b->vertices, bytes);
     ID3D11DeviceContext_Unmap(s_ctx, (ID3D11Resource *)s_vb, 0);
