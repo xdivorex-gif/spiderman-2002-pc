@@ -1546,7 +1546,7 @@ static int hud_widescreen(const Nv2aSurface *s, const Nv2aRenderState *rs, int h
             }
             fprintf(stderr, "[HUD2D] n %u x %.1f..%.1f y %.1f..%.1f blend %u src %X dst %X z %.3f tex %d\n",
                     n, lo, hi, ylo, yhi, rs->blend_enable, rs->blend_src, rs->blend_dst,
-                    v[0].z, 0);
+                    v[0].z, hud);
             nlog--;
         }
     }
@@ -1554,9 +1554,11 @@ static int hud_widescreen(const Nv2aSurface *s, const Nv2aRenderState *rs, int h
         return 0;
     for (i = 0; i < n; i++) {
         out[i] = v[i];
-        if (hi <= w * 0.25f)
+        /* pinned by the element's centre, so the head icon, its ring and
+         * the bars beside it all keep the same left-edge transform */
+        if (lo + hi < w * (2.0f / 3.0f))
             out[i].x = v[i].x / f;
-        else if (lo >= w * 0.75f)
+        else if (lo + hi > w * (4.0f / 3.0f))
             out[i].x = w - (w - v[i].x) / f;
         else
             out[i].x = w * 0.5f + (v[i].x - w * 0.5f) / f;
