@@ -1513,6 +1513,19 @@ static void be_draw_inner(const Nv2aSurface *s, const Nv2aBatch *b);
  * play from the menus by 3D on screen failed: menus have 3D too (the Load
  * screen's camera), and their text, narrowed glyph by glyph, tore apart.
  */
+/* The HUD pieces drawn this frame and the last (guest x/y extents): a draw
+ * that sits inside one -- the height meter's red fill, untextured or not in
+ * hud.txt -- moves with the piece it sits in. */
+typedef struct { float x0, x1, y0, y1; } HudBox;
+static HudBox s_hud_box[2][16];
+static int s_hud_nbox[2], s_hud_cur;
+
+static void hud_boxes_flip(void)
+{
+    s_hud_cur ^= 1;
+    s_hud_nbox[s_hud_cur] = 0;
+}
+
 static int hud_widescreen(const Nv2aSurface *s, const Nv2aRenderState *rs, int hud,
                           const Nv2aVertex *v, Nv2aVertex *out, UINT n)
 {
@@ -1550,8 +1563,36 @@ static int hud_widescreen(const Nv2aSurface *s, const Nv2aRenderState *rs, int h
             nlog--;
         }
     }
-    if (!hud)
-        return 0;
+    {
+        float ylo = 1e9f, yhi = -1e9f, mid;
+        int k, j;
+        for (i = 0; i < n; i++) {
+            if (v[i].y < ylo) ylo = v[i].y;
+            if (v[i].y > yhi) yhi = v[i].y;
+        }
+        mid = lo + hi;
+        if (hud) {
+            int c = s_hud_cur;
+            if (s_hud_nbox[c] < 16) {
+                HudBox *bx = &s_hud_box[c][s_hud_nbox[c]++];
+                bx->x0 = lo; bx->x1 = hi; bx->y0 = ylo; bx->y1 = yhi;
+            }
+        } else {
+            for (k = 0; k < 2 && !hud; k++)
+                for (j = 0; j < s_hud_nbox[k]; j++) {
+                    const HudBox *bx = &s_hud_box[k][j];
+                    if (lo >= bx->x0 - 2.0f && hi <= bx->x1 + 2.0f &&
+                        ylo >= bx->y0 - 2.0f && yhi <= bx->y1 + 2.0f) {
+                        hud = 1;
+                        mid = bx->x0 + bx->x1;
+                        break;
+                    }
+                }
+        }
+        if (!hud)
+            return 0;
+        lo = hi = mid * 0.5f;
+    }
     for (i = 0; i < n; i++) {
         out[i] = v[i];
         /* pinned by the element's centre, so the head icon, its ring and
@@ -1875,6 +1916,7 @@ unsigned long gpu_backend_flip_count(void)
 
 static void be_flip(void)
 {
+    hud_boxes_flip();
     static DWORD last;
     DWORD now;
     int i;
