@@ -294,6 +294,8 @@ static uint32_t s_ow, s_oh;
 extern uint32_t xbox_FramebufferWindowPresentedVa(void);
 extern void xbox_FramebufferWindowPresentHiRes(const void *pixels, uint32_t w, uint32_t h,
                                                uint32_t pitch);
+extern void xbox_FramebufferWindowPresentShared(void *handle, uint32_t w, uint32_t h, int slot);
+extern int costume_panel_wants_frame(void);
 
 static void render_size_init(void)
 {
@@ -1817,6 +1819,83 @@ static void queue_readback(Surf *r)
     r->pending = 1;
 }
 
+/* The full-size picture to the window without leaving the GPU: copied into
+ * one of three textures shared with the presenter's device (keyed mutex: 0
+ * free, 1 a frame to show), whose handle goes to fb_present.c. Through the
+ * CPU (present_scaled's staging copy) a 2560x1440 frame cost ~8 ms a flip.
+ * Returns 0 when sharing is not to be had; RECOMP_PRESENT_SHARED=0 turns it
+ * off. */
+static int present_shared(Surf *r, uint32_t ow, uint32_t oh)
+{
+    static ID3D11Texture2D *tex[3];
+    static ID3D11RenderTargetView *rtv[3];
+    static IDXGIKeyedMutex *mx[3];
+    static HANDLE handle[3];
+    static uint32_t tw, th;
+    static int next, off = -1;
+    int k, i;
+
+    if (off < 0) {
+        const char *e = getenv("RECOMP_PRESENT_SHARED");
+        off = e && e[0] == '0';
+    }
+    if (off)
+        return 0;
+    if (!tex[0] || tw != ow || th != oh) {
+        D3D11_TEXTURE2D_DESC td;
+        for (i = 0; i < 3; i++) {
+            if (mx[i]) IDXGIKeyedMutex_Release(mx[i]);
+            if (rtv[i]) ID3D11RenderTargetView_Release(rtv[i]);
+            if (tex[i]) ID3D11Texture2D_Release(tex[i]);
+            mx[i] = NULL; rtv[i] = NULL; tex[i] = NULL; handle[i] = NULL;
+        }
+        memset(&td, 0, sizeof td);
+        td.Width = ow; td.Height = oh; td.MipLevels = 1; td.ArraySize = 1;
+        td.Format = DXGI_FORMAT_B8G8R8A8_UNORM; td.SampleDesc.Count = 1;
+        td.Usage = D3D11_USAGE_DEFAULT;
+        td.BindFlags = D3D11_BIND_RENDER_TARGET | D3D11_BIND_SHADER_RESOURCE;
+        td.MiscFlags = D3D11_RESOURCE_MISC_SHARED_KEYEDMUTEX;
+        for (i = 0; i < 3; i++) {
+            IDXGIResource *res = NULL;
+            if (FAILED(ID3D11Device_CreateTexture2D(s_dev, &td, NULL, &tex[i]))
+                || FAILED(ID3D11Device_CreateRenderTargetView(s_dev, (ID3D11Resource *)tex[i],
+                                                              NULL, &rtv[i]))
+                || FAILED(ID3D11Texture2D_QueryInterface(tex[i], &IID_IDXGIKeyedMutex,
+                                                         (void **)&mx[i]))
+                || FAILED(ID3D11Texture2D_QueryInterface(tex[i], &IID_IDXGIResource,
+                                                         (void **)&res))
+                || FAILED(IDXGIResource_GetSharedHandle(res, &handle[i]))) {
+                if (res) IDXGIResource_Release(res);
+                fprintf(stderr, "  [GPU-BE] shared present textures failed; through the CPU\n");
+                off = 1;
+                return 0;
+            }
+            IDXGIResource_Release(res);
+        }
+        tw = ow; th = oh;
+        fprintf(stderr, "  [GPU-BE] presenting %ux%u through shared textures\n", ow, oh);
+    }
+    /* The next slot the presenter is not reading: free (0), or holding a
+     * frame it never got to (1), overwritten with this newer one. */
+    for (k = 0; k < 3; k++) {
+        i = (next + k) % 3;
+        if (IDXGIKeyedMutex_AcquireSync(mx[i], 0, 0) == S_OK
+            || IDXGIKeyedMutex_AcquireSync(mx[i], 1, 0) == S_OK)
+            break;
+    }
+    if (k == 3)
+        return 1;                       /* all busy: this frame is skipped */
+    if (ow == r->rw && oh == r->rh)
+        ID3D11DeviceContext_CopyResource(s_ctx, (ID3D11Resource *)tex[i],
+                                         (ID3D11Resource *)r->tex);
+    else
+        blit(r->srv, rtv[i], ow, oh);
+    IDXGIKeyedMutex_ReleaseSync(mx[i], 1);
+    xbox_FramebufferWindowPresentShared(handle[i], ow, oh, i);
+    next = i + 1;
+    return 1;
+}
+
 /* The full-size picture to the window: the target the flip showed, copied at
  * this flip and handed over at the next, like the readbacks above. */
 static void present_scaled(void)
@@ -1852,6 +1931,8 @@ static void present_scaled(void)
         /* The output size scales with the target as the render size does. */
         ow = s_ow ? (uint32_t)((uint64_t)r->rw * s_ow / (uint32_t)(GUEST_W * s_sx + 0.5f)) : r->rw;
         oh = s_oh ? (uint32_t)((uint64_t)r->rh * s_oh / (uint32_t)(GUEST_H * s_sy + 0.5f)) : r->rh;
+        if (!costume_panel_wants_frame() && present_shared(r, ow, oh))
+            return;
         if (!stage || sw != ow || sh != oh) {
             D3D11_TEXTURE2D_DESC td;
             if (stage) ID3D11Texture2D_Release(stage);

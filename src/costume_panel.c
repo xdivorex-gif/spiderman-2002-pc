@@ -818,6 +818,13 @@ static void draw_panel(void)
          DT_CENTER | DT_VCENTER, s);
 }
 
+/* Whether costume_panel_draw would draw on this frame: the back end then
+ * sends the frame through the CPU instead of sharing it on the GPU. */
+int costume_panel_wants_frame(void)
+{
+    return s_paused && !s_inject_on;
+}
+
 /* Called with the frame about to be shown (BGRA, top-down). While the game
  * is paused, draws on a copy and points *pixels / *pitch at it. */
 void costume_panel_draw(const void **pixels, uint32_t w, uint32_t h, uint32_t *pitch)
