@@ -1462,26 +1462,32 @@ static void be_draw_inner(const Nv2aSurface *s, const Nv2aBatch *b);
  * 640x480 frame stretched to the screen; the HUD and menus, drawn in screen
  * pixels (every vertex rhw 1), come out that much wider. As on the PC
  * version (checked full-screen at 16:9), only the HUD in play is drawn its
- * own shape -- the head icon round -- each piece narrowed by the factor and
- * kept by its own edge, so it stays where it was; the menus and the pause
- * menu fill the screen, stretched, as there. "In play": 3D drawn on the
- * screen in the last 250 ms and the game not paused. A draw across most of
- * the width (a fade, a flash) is left to cover the screen.
+ * own shape -- the head icon round -- narrowed by the factor: a piece wholly
+ * in the outer quarter of the screen by that edge, so the health bar and
+ * compass stay where they were, anything else round the centre (text
+ * narrowed piece by piece by where each glyph lay tore words apart); the
+ * menus and the pause menu fill the screen, stretched, as there. "In play":
+ * a level with its hero, not paused (costume_in_play; the menus' 3D -- the
+ * Load screen's camera -- made them pass for play), and 3D drawn on the
+ * screen in the last 250 ms. A draw across most of the width (a fade, a
+ * flash) is left to cover the screen.
  */
-int costume_game_paused(void);      /* costume_panel.c */
+int costume_in_play(void);          /* costume_panel.c */
 
 static int hud_widescreen(const Nv2aSurface *s, const Nv2aRenderState *rs,
                           const Nv2aVertex *v, Nv2aVertex *out, UINT n)
 {
     static float f = -1.0f;
     static DWORD last_3d;               /* when the screen last had 3D drawn on it */
-    float lo = 1e9f, hi = -1e9f, w = (float)s->width, mid;
+    float lo = 1e9f, hi = -1e9f, w = (float)s->width;
     int pin;
     UINT i;
 
     if (f < 0.0f) {
-        const char *e = getenv("RECOMP_HOR_PLUS");
-        f = e && *e ? (float)atof(e) : 0.0f;
+        /* RECOMP_HUD_WIDE=1 while the HUD's own shape is worked on (menus
+         * with 3D in them passed for play and their text was torn apart) */
+        const char *e = getenv("RECOMP_HOR_PLUS"), *on = getenv("RECOMP_HUD_WIDE");
+        f = e && *e && on && *on == '1' ? (float)atof(e) : 0.0f;
         if (f <= 1.0f || f > 4.0f)
             f = 0.0f;
     }
@@ -1511,15 +1517,14 @@ static int hud_widescreen(const Nv2aSurface *s, const Nv2aRenderState *rs,
             nlog--;
         }
     }
-    pin = GetTickCount() - last_3d < 250 && !costume_game_paused();
+    pin = GetTickCount() - last_3d < 250 && costume_in_play();
     if (!pin || hi - lo >= w * 0.75f)
         return 0;
-    mid = (lo + hi) * 0.5f;
     for (i = 0; i < n; i++) {
         out[i] = v[i];
-        if (mid < w / 3.0f)
+        if (hi <= w * 0.25f)
             out[i].x = v[i].x / f;
-        else if (mid > w * 2.0f / 3.0f)
+        else if (lo >= w * 0.75f)
             out[i].x = w - (w - v[i].x) / f;
         else
             out[i].x = w * 0.5f + (v[i].x - w * 0.5f) / f;

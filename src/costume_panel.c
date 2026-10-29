@@ -199,10 +199,16 @@ static int game_paused(void)
     return app && GUEST8(app + SM_APP_PAUSED);
 }
 
-/* For gpu_backend.c's widescreen 2D: the pause menu is laid out as a menu. */
-int costume_game_paused(void)
+/* For gpu_backend.c's widescreen 2D: in play is a level with its hero
+ * ([world 0x4C06B8] + 0x1E4; the front end has none, 3D menus and all) and
+ * the game not paused. */
+int costume_in_play(void)
 {
-    return game_paused();
+    uint32_t w = g_xbox_mem_offset ? GUEST32(0x004C06B8u) : 0, h;
+    if (!w || w >= 0x04000000)
+        return 0;
+    h = GUEST32(w + 0x1E4);
+    return h && h < 0x04000000 && !game_paused();
 }
 
 /* ── Pressing the pause menu's Restart Level ───────────────────── */
