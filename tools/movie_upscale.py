@@ -1,6 +1,6 @@
 r"""Upscale a Bink movie for movie_upscale.c: movies\<name>.mp4 beside the exe.
 
-    py -3 tools/movie_upscale.py [name ...]     default: activisn
+    py -3 tools/movie_upscale.py [name ...]     default: activisn treyarch
 
 Each frame of game_files\data\movies\<name>.bik is upscaled x4 with
 Real-ESRGAN (tools\realesrgan, realesrgan-x4plus: the general model -- the
@@ -54,5 +54,5 @@ def upscale(name):
 
 
 if __name__ == "__main__":
-    for n in sys.argv[1:] or ["activisn"]:
+    for n in sys.argv[1:] or ["activisn", "treyarch"]:
         upscale(n)
