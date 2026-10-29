@@ -127,6 +127,11 @@ def collect():
             d = bytes(p.stream_of(e)[e.offset:e.offset + e.size])
             h, w = struct.unpack_from("<II", d, 12)
             fourcc = d[84:88]
+            if fourcc == b"\0\0\0\0" and struct.unpack_from("<I", d, 88)[0] == 32:
+                # A8R8G8B8 (the height meter's red marker, alt_sp_001)
+                px = list(struct.unpack_from("<%dI" % (w * h), d, 128))
+                found.setdefault(fnv(px), (name, w, h, px))
+                continue
             if fourcc not in (b"DXT1", b"DXT3", b"DXT5"):
                 print("skip %s: %r" % (name, fourcc))
                 continue

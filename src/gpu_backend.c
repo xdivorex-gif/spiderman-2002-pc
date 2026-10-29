@@ -354,6 +354,7 @@ typedef struct {
     uint32_t key, w, h, color, pitch, levels, sum;
     uint32_t tw, th;            /* the D3D texture's size: w x h, or a pack image's */
     int hud;                    /* one of the HUD's (texpack\hud.txt) */
+    uint32_t hash;              /* its texels hash (RECOMP_HUD_LOG) */
     ID3D11Texture2D          *tex;
     ID3D11ShaderResourceView *srv;
     unsigned used;
@@ -1119,9 +1120,12 @@ static int hud_texture(uint32_t hash)
 
 /* A texture just decoded from guest memory, before upload. Returns a pack
  * image to upload instead, or NULL; *hud whether it is one of the HUD's. */
+static uint32_t s_srv_hash;     /* texture_srv's last texels hash */
+
 static const PackImg *texture_decoded(const Nv2aTexture *t, uint32_t *px, int *hud)
 {
     uint32_t hash = texels_hash(px, (size_t)t->width * t->height);
+    s_srv_hash = hash;
     texture_dump(t, px, hash);
     texture_replace(t, px, hash);
     *hud = hud_texture(hash);
@@ -1139,6 +1143,7 @@ static ID3D11ShaderResourceView *texture_srv(const Nv2aTexture *t)
     int i, mips, hud;
 
     s_srv_hud = 0;
+    s_srv_hash = 0;
     /* One of our render targets, sampled: use it where it is. */
     for (i = 0; i < MAX_SURF; i++)
         if (s_surf[i].tex && s_surf[i].key == key)
@@ -1159,6 +1164,7 @@ static ID3D11ShaderResourceView *texture_srv(const Nv2aTexture *t)
     if (hit && hit->sum == sum) {
         hit->used = ++s_tick;
         s_srv_hud = hit->hud;
+        s_srv_hash = hit->hash;
         return hit->srv;
     }
     if ((size_t)t->width * t->height > s_decode_cap) {
@@ -1184,6 +1190,7 @@ static ID3D11ShaderResourceView *texture_srv(const Nv2aTexture *t)
             ID3D11DeviceContext_GenerateMips(s_ctx, hit->srv);
         hit->sum = sum;
         hit->hud = hud;
+        hit->hash = s_srv_hash;
         hit->used = ++s_tick;
         return hit->srv;
     }
@@ -1231,6 +1238,7 @@ static ID3D11ShaderResourceView *texture_srv(const Nv2aTexture *t)
     victim->levels = mips ? 2 : 1;
     victim->sum = sum;
     victim->hud = hud;
+    victim->hash = s_srv_hash;
     victim->used = ++s_tick;
     return victim->srv;
 }
@@ -1541,27 +1549,27 @@ static int hud_widescreen(const Nv2aSurface *s, const Nv2aRenderState *rs, int h
     }
     if (f == 0.0f || s->width != 640 || s->height != 480 || !n || !rs)
         return 0;
-    for (i = 0; i < n; i++) {
-        if (v[i].rhw != 1.0f)
-            return 0;
-        if (v[i].x < lo) lo = v[i].x;
-        if (v[i].x > hi) hi = v[i].x;
-    }
     {
+        int all2d = 1;
+        float ylo = 1e9f, yhi = -1e9f;
         static int nlog = -1;
+        for (i = 0; i < n; i++) {
+            if (v[i].rhw != 1.0f) all2d = 0;
+            if (v[i].x < lo) lo = v[i].x;
+            if (v[i].x > hi) hi = v[i].x;
+            if (v[i].y < ylo) ylo = v[i].y;
+            if (v[i].y > yhi) yhi = v[i].y;
+        }
+        /* RECOMP_HUD_LOG: the draws in the right third while a HUD shows */
         if (nlog < 0)
-            nlog = getenv("RECOMP_HUD_LOG") ? 300 : 0;
-        if (nlog > 0 && hi - lo > 40.0f) {
-            float ylo = 1e9f, yhi = -1e9f;
-            for (i = 0; i < n; i++) {
-                if (v[i].y < ylo) ylo = v[i].y;
-                if (v[i].y > yhi) yhi = v[i].y;
-            }
-            fprintf(stderr, "[HUD2D] n %u x %.1f..%.1f y %.1f..%.1f blend %u src %X dst %X z %.3f tex %d\n",
-                    n, lo, hi, ylo, yhi, rs->blend_enable, rs->blend_src, rs->blend_dst,
-                    v[0].z, hud);
+            nlog = getenv("RECOMP_HUD_LOG") ? 400 : 0;
+        if (nlog > 0 && all2d && s_hud_nbox[s_hud_cur ^ 1] && lo > w * 0.5f && hi - lo < 160.0f) {
+            fprintf(stderr, "[HUD2D] n %u x %.1f..%.1f y %.1f..%.1f rhw %.3f z %.3f hud %d blend %u tex %08X\n",
+                    n, lo, hi, ylo, yhi, v[0].rhw, v[0].z, hud, rs->blend_enable, s_srv_hash);
             nlog--;
         }
+        if (!all2d)
+            return 0;
     }
     {
         float ylo = 1e9f, yhi = -1e9f, mid;
