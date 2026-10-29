@@ -59,6 +59,7 @@ set(GAME_SOURCES
     src/costume_panel.c     # costume choice, and its panel over the pause menu
     src/shocker_input.c     # the Shocker's blasts on L2 + a face button
     src/shocker_powers.c    # his tornado's pull and damage, in the game
+    src/movie_upscale.c     # movies\NAME.mp4 shown for the Bink of that name
     # Add game-specific sources here, e.g.:
     # src/asset_loader.c
     # src/custom_renderer.c
@@ -96,6 +97,7 @@ target_link_libraries(${PROJECT_NAME} PRIVATE
     winmm
     d3dcompiler             # gpu_backend.c compiles its shaders at start-up
     windowscodecs ole32     # gpu_backend.c reads texture-pack PNGs with WIC
+    mfplat mfreadwrite mfuuid  # movie_upscale.c decodes the upscaled movies
     # Lets the fault handler resolve the host RIP back to the generated
     # function's symbol, i.e. to the guest function that faulted.
     dbghelp

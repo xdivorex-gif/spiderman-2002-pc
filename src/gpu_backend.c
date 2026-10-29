@@ -296,6 +296,7 @@ extern void xbox_FramebufferWindowPresentHiRes(const void *pixels, uint32_t w, u
                                                uint32_t pitch);
 extern void xbox_FramebufferWindowPresentShared(void *handle, uint32_t w, uint32_t h, int slot);
 extern int costume_panel_wants_frame(void);
+extern const uint32_t *movie_upscale_texture(uint32_t *w, uint32_t *h);   /* movie_upscale.c */
 
 static void render_size_init(void)
 {
@@ -1182,6 +1183,18 @@ static ID3D11ShaderResourceView *texture_srv(const Nv2aTexture *t)
     up = pack ? pack->px : s_decode;
     uw = pack ? pack->w : t->width;
     uh = pack ? pack->h : t->height;
+    /* A Bink frame (the title's 640x480 linear A8R8G8B8, rewritten in place
+     * each frame) of a movie with an upscaled copy: that copy's frame. */
+    if (t->width == 640 && t->height == 480 && t->color == 0x12) {
+        uint32_t mw, mh;
+        const uint32_t *m = movie_upscale_texture(&mw, &mh);
+        if (m) {
+            pack = NULL;
+            up = m;
+            uw = mw;
+            uh = mh;
+        }
+    }
     s_n_uploads++;
 
     /* Same size and format: overwrite in place, no reallocation. */
