@@ -384,8 +384,19 @@ sample_stacks.txt against build/Release/spiderman_recomp.map):
   size and handed to the window (toolkit d99e504,
   xbox_FramebufferWindowPresentHiRes). 58-60 fps in ORIGIN_A and Training.
   Needed the combiner shader without an indexed register array: as
-  float4[16] it went to scratch memory and 1080p ran 9-20 fps. True
-  widescreen (more field of view) would need the game's projection changed.
+  float4[16] it went to scratch memory and 1080p ran 9-20 fps.
+- **Widescreen: done (2026-10-28).** settings.ini AspectRatio=widescreen
+  (first in the launcher) sets RECOMP_HOR_PLUS = screen width over 4:3. 3D:
+  Hor+ in sub_00012810_enter (the 3D's perspective: fov, aspect h/w; fov
+  widened so tan grows by the factor, aspect shrunk by it), and
+  sub_00298400_enter (a projection made a few times at start, aspect scale
+  [0x6F2C94]). 2D as the PC version does at 16:9 (checked full-screen):
+  menus and pause stretched to fill, the HUD in play its own shape --
+  gpu_backend.c hud_widescreen narrows screen-space draws (rhw 1) by the
+  factor, each by its own edge, only with 3D on screen and not paused.
+  Dead ends: squeezing the orthographic projection (sub_002B0B9B, -1..1,
+  the full-screen passes') broke the picture; narrowing all 2D split the
+  menus' tiled backdrops (six tiles, 128/256 wide) into strips.
 
 ## Side study: Kraven levels into the PS2 version (2026-10-24)
 
