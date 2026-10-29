@@ -1,6 +1,6 @@
 r"""Upscale HUD art into the texture pack (texpack\<hash>.png).
 
-    py -3 tools/hud_upscale.py [--dry]
+    py -3 tools/hud_upscale.py [--dry | --list]   --list: texpackhud.txt only
     py -3 tools/hud_upscale.py --legal     the boot legal screen (see legal())
 
 The health bar (e_healthbar*: its ring and frame), the head icons in it
@@ -197,6 +197,15 @@ def main(dry):
     found = collect()
     for hsh, (name, w, h, _) in sorted(found.items(), key=lambda kv: kv[1][0]):
         print("%08X %-32s %dx%d" % (hsh, name, w, h))
+    # texpack\hud.txt: the HUD's textures, which gpu_backend.c draws their own
+    # shape in widescreen (the menus stay stretched, as on the PC version)
+    for d in OUT:
+        os.makedirs(d, exist_ok=True)
+        with open(os.path.join(d, "hud.txt"), "w") as f:
+            for hsh, (name, w, h, _) in sorted(found.items(), key=lambda kv: kv[1][0]):
+                f.write("%08X %s\n" % (hsh, name))
+    if "--list" in sys.argv:
+        return
     if dry:
         return
     for d in OUT:

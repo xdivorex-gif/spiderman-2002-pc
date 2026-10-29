@@ -353,6 +353,7 @@ static unsigned s_tick;
 typedef struct {
     uint32_t key, w, h, color, pitch, levels, sum;
     uint32_t tw, th;            /* the D3D texture's size: w x h, or a pack image's */
+    int hud;                    /* one of the HUD's (texpack\hud.txt) */
     ID3D11Texture2D          *tex;
     ID3D11ShaderResourceView *srv;
     unsigned used;
@@ -1082,15 +1083,52 @@ static const PackImg *pack_find(uint32_t hash)
     return NULL;
 }
 
+/* texpack\hud.txt: hashes (8 hex digits, a name after) of the HUD's
+ * textures (tools/hud_upscale.py), drawn their own shape in widescreen. */
+static uint32_t *s_hud;
+static int s_nhud = -1;
+
+static int hud_texture(uint32_t hash)
+{
+    int i;
+    if (s_nhud < 0) {
+        char path[MAX_PATH], line[128], *slash;
+        FILE *f;
+        s_nhud = 0;
+        GetModuleFileNameA(NULL, path, sizeof path);
+        if ((slash = strrchr(path, '\\')) != NULL)
+            strcpy(slash + 1, "texpack\\hud.txt");
+        if ((f = fopen(path, "r")) != NULL) {
+            unsigned h;
+            while (fgets(line, sizeof line, f))
+                if (sscanf(line, "%8x", &h) == 1) {
+                    uint32_t *n = (uint32_t *)realloc(s_hud, (s_nhud + 1) * sizeof *s_hud);
+                    if (!n)
+                        break;
+                    s_hud = n;
+                    s_hud[s_nhud++] = h;
+                }
+            fclose(f);
+        }
+    }
+    for (i = 0; i < s_nhud; i++)
+        if (s_hud[i] == hash)
+            return 1;
+    return 0;
+}
+
 /* A texture just decoded from guest memory, before upload. Returns a pack
- * image to upload instead, or NULL. */
-static const PackImg *texture_decoded(const Nv2aTexture *t, uint32_t *px)
+ * image to upload instead, or NULL; *hud whether it is one of the HUD's. */
+static const PackImg *texture_decoded(const Nv2aTexture *t, uint32_t *px, int *hud)
 {
     uint32_t hash = texels_hash(px, (size_t)t->width * t->height);
     texture_dump(t, px, hash);
     texture_replace(t, px, hash);
+    *hud = hud_texture(hash);
     return pack_find(hash);
 }
+
+static int s_srv_hud;           /* texture_srv's last: a HUD texture */
 
 static ID3D11ShaderResourceView *texture_srv(const Nv2aTexture *t)
 {
@@ -1098,8 +1136,9 @@ static ID3D11ShaderResourceView *texture_srv(const Nv2aTexture *t)
     Tex *hit = NULL, *victim = NULL;
     const PackImg *pack;
     const uint32_t *up;
-    int i, mips;
+    int i, mips, hud;
 
+    s_srv_hud = 0;
     /* One of our render targets, sampled: use it where it is. */
     for (i = 0; i < MAX_SURF; i++)
         if (s_surf[i].tex && s_surf[i].key == key)
@@ -1119,6 +1158,7 @@ static ID3D11ShaderResourceView *texture_srv(const Nv2aTexture *t)
     }
     if (hit && hit->sum == sum) {
         hit->used = ++s_tick;
+        s_srv_hud = hit->hud;
         return hit->srv;
     }
     if ((size_t)t->width * t->height > s_decode_cap) {
@@ -1129,7 +1169,8 @@ static ID3D11ShaderResourceView *texture_srv(const Nv2aTexture *t)
     }
     if (!nv2a_backend_decode_texture(t, s_decode))
         return NULL;
-    pack = texture_decoded(t, s_decode);
+    pack = texture_decoded(t, s_decode, &hud);
+    s_srv_hud = hud;
     up = pack ? pack->px : s_decode;
     uw = pack ? pack->w : t->width;
     uh = pack ? pack->h : t->height;
@@ -1142,6 +1183,7 @@ static ID3D11ShaderResourceView *texture_srv(const Nv2aTexture *t)
         if (hit->levels > 1)
             ID3D11DeviceContext_GenerateMips(s_ctx, hit->srv);
         hit->sum = sum;
+        hit->hud = hud;
         hit->used = ++s_tick;
         return hit->srv;
     }
@@ -1188,6 +1230,7 @@ static ID3D11ShaderResourceView *texture_srv(const Nv2aTexture *t)
     victim->color = t->color; victim->pitch = t->pitch;
     victim->levels = mips ? 2 : 1;
     victim->sum = sum;
+    victim->hud = hud;
     victim->used = ++s_tick;
     return victim->srv;
 }
@@ -1461,43 +1504,33 @@ static void be_draw_inner(const Nv2aSurface *s, const Nv2aBatch *b);
  * 4:3). The 3D is drawn that much wider (Hor+, recomp_manual.c) into the
  * 640x480 frame stretched to the screen; the HUD and menus, drawn in screen
  * pixels (every vertex rhw 1), come out that much wider. As on the PC
- * version (checked full-screen at 16:9), only the HUD in play is drawn its
- * own shape -- the head icon round -- narrowed by the factor: a piece wholly
- * in the outer quarter of the screen by that edge, so the health bar and
- * compass stay where they were, anything else round the centre (text
- * narrowed piece by piece by where each glyph lay tore words apart); the
- * menus and the pause menu fill the screen, stretched, as there. "In play":
- * a level with its hero, not paused (costume_in_play; the menus' 3D -- the
- * Load screen's camera -- made them pass for play), and 3D drawn on the
- * screen in the last 250 ms. A draw across most of the width (a fade, a
- * flash) is left to cover the screen.
+ * version (checked full-screen at 16:9) only the HUD is drawn its own shape
+ * -- the head icon round -- and the menus fill the screen, stretched. The
+ * HUD is known by its textures (texpack\hud.txt: head icons, health bar,
+ * compass, height meter): a draw with one is narrowed by the factor, by
+ * the edge it lies against if wholly in the outer quarter (so the health
+ * bar and compass stay where they were), else round the centre. Telling
+ * play from the menus by 3D on screen failed: menus have 3D too (the Load
+ * screen's camera), and their text, narrowed glyph by glyph, tore apart.
  */
-int costume_in_play(void);          /* costume_panel.c */
-
-static int hud_widescreen(const Nv2aSurface *s, const Nv2aRenderState *rs,
+static int hud_widescreen(const Nv2aSurface *s, const Nv2aRenderState *rs, int hud,
                           const Nv2aVertex *v, Nv2aVertex *out, UINT n)
 {
     static float f = -1.0f;
-    static DWORD last_3d;               /* when the screen last had 3D drawn on it */
     float lo = 1e9f, hi = -1e9f, w = (float)s->width;
-    int pin;
     UINT i;
 
     if (f < 0.0f) {
-        /* RECOMP_HUD_WIDE=1 while the HUD's own shape is worked on (menus
-         * with 3D in them passed for play and their text was torn apart) */
-        const char *e = getenv("RECOMP_HOR_PLUS"), *on = getenv("RECOMP_HUD_WIDE");
-        f = e && *e && on && *on == '1' ? (float)atof(e) : 0.0f;
+        const char *e = getenv("RECOMP_HOR_PLUS");
+        f = e && *e ? (float)atof(e) : 0.0f;
         if (f <= 1.0f || f > 4.0f)
             f = 0.0f;
     }
     if (f == 0.0f || s->width != 640 || s->height != 480 || !n || !rs)
         return 0;
     for (i = 0; i < n; i++) {
-        if (v[i].rhw != 1.0f) {
-            last_3d = GetTickCount();
+        if (v[i].rhw != 1.0f)
             return 0;
-        }
         if (v[i].x < lo) lo = v[i].x;
         if (v[i].x > hi) hi = v[i].x;
     }
@@ -1517,8 +1550,7 @@ static int hud_widescreen(const Nv2aSurface *s, const Nv2aRenderState *rs,
             nlog--;
         }
     }
-    pin = GetTickCount() - last_3d < 250 && costume_in_play();
-    if (!pin || hi - lo >= w * 0.75f)
+    if (!hud)
         return 0;
     for (i = 0; i < n; i++) {
         out[i] = v[i];
@@ -1550,7 +1582,7 @@ static void be_draw_inner(const Nv2aSurface *s, const Nv2aBatch *b)
     Consts c;
     ID3D11ShaderResourceView *srv = NULL;
     float bf[4];
-    int rc;
+    int rc, hud = 0;
 
     LONGLONG t = ticks();
 #define SEG(i) do { LONGLONG n_ = ticks(); s_seg[i] += n_ - t; t = n_; } while (0)
@@ -1593,6 +1625,7 @@ static void be_draw_inner(const Nv2aSurface *s, const Nv2aBatch *b)
             if (!b->stage[st])
                 continue;
             srvs[st] = texture_srv(b->stage[st]);
+            hud |= s_srv_hud;
             if (srvs[st] == r->srv)
                 srvs[st] = NULL;
             if (srvs[st]) {
@@ -1623,6 +1656,7 @@ static void be_draw_inner(const Nv2aSurface *s, const Nv2aBatch *b)
     } else {
         if (b->texture) {
             srv = texture_srv(b->texture);
+            hud = s_srv_hud;
             /* A texture that is the target being drawn: no sampling, no hazard. */
             if (srv == r->srv)
                 srv = NULL;
@@ -1680,7 +1714,7 @@ static void be_draw_inner(const Nv2aSurface *s, const Nv2aBatch *b)
                                        s_vb_used ? D3D11_MAP_WRITE_NO_OVERWRITE
                                                  : D3D11_MAP_WRITE_DISCARD, 0, &m)))
         return;
-    if (!hud_widescreen(s, rs, b->vertices, (Nv2aVertex *)((uint8_t *)m.pData + s_vb_used),
+    if (!hud_widescreen(s, rs, hud, b->vertices, (Nv2aVertex *)((uint8_t *)m.pData + s_vb_used),
                         bytes / stride))
         memcpy((uint8_t *)m.pData + s_vb_used, b->vertices, bytes);
     ID3D11DeviceContext_Unmap(s_ctx, (ID3D11Resource *)s_vb, 0);
