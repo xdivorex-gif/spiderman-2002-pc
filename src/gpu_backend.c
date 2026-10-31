@@ -47,6 +47,7 @@
 #include <string.h>
 
 #include "nv2a_backend.h"
+#include "d3d8_swizzle.h"
 
 extern ptrdiff_t xbox_GetMemoryOffset(void);
 
@@ -838,7 +839,12 @@ static Surf *bind_target(const Nv2aSurface *s, const Nv2aRenderState *rs, Zbuf *
 
 /* A sparse checksum of the guest bytes: notices a texture rewritten in
  * place (video, streamed) without hashing megabytes per draw. Spans level 0;
- * the caller has already refused a texture that runs past guest RAM. */
+ * the caller has already refused a texture that runs past guest RAM.
+ *
+ * A linear texture (not swizzled or DXT: the Bink movies' 640x480 frame) is read every
+ * 256 bytes. 64 samples there fell on two pixel columns, and a dark movie
+ * frame that differed only elsewhere went unseen -- origin1.bik stayed on
+ * one frame (black, in a fade) for up to 51 frames. */
 static uint32_t tex_sum(const Nv2aTexture *t, uint32_t n)
 {
     const uint8_t *p = GUEST(t->offset);
@@ -846,7 +852,10 @@ static uint32_t tex_sum(const Nv2aTexture *t, uint32_t n)
 
     if (n < 4)
         return 0;
-    step = n / 64 > 4 ? (n / 64) & ~3u : 4;
+    if (!d3d8_format_is_swizzled(t->color) && !d3d8_format_dxt_block_bytes(t->color))
+        step = 256;
+    else
+        step = n / 64 > 4 ? (n / 64) & ~3u : 4;
     for (i = 0; i + 4 <= n; i += step)
         sum = (sum ^ *(const uint32_t *)(p + i)) * 16777619u;
     return sum ^ *(const uint32_t *)(p + n - 4);

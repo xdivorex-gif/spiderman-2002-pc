@@ -86,6 +86,7 @@ target_include_directories(${PROJECT_NAME} PRIVATE
     ${XBOXRECOMP_DIR}/include
     ${XBOXRECOMP_DIR}/src/kernel    # nv2a_backend.h, for gpu_backend.c
     ${XBOXRECOMP_DIR}/src/usb       # usb_gamepad.h, for costume_panel.c
+    ${XBOXRECOMP_DIR}/src/d3d       # d3d8_swizzle.h (format tests), for gpu_backend.c
 )
 
 # Windows SDK libraries needed at link time
