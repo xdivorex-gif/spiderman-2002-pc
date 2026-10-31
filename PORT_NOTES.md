@@ -25,16 +25,13 @@ art in assets\, built in via src\launcher.rc) edits `build\Release\settings.ini`
 and starts the game with logs in play_out.txt / play_log.txt. The game reads
 the ini at start-up (src\settings.c, first thing in WinMain): with no RECOMP_PB_EXEC
 in the environment it sets every required switch itself, so the exe runs on
-its own; ini keys (Resolution, AspectRatio stretch|4:3, Supersampling,
+its own; ini keys (Resolution, AspectRatio stretch|4:3,
 Fullscreen, VSync, Renderer gpu|cpu) override the environment.
-Supersampling renders at 2x per axis and the shown frame is shrunk on the GPU
-(RECOMP_OUTPUT_SIZE). 1080p 4:3 + 2x2 SS (2880x2160) holds 60 fps in Training.
 Checked 2026-10-25: a clean start and play.bat behave the same. Every boot
 flips unpaced for its first ~10 s (legal screen, first logo: 110-175 flips/s)
 and then holds 60.0; harmless there (movies keep real time). Not a launcher
 problem; look at why pacing starts late only if a timed scene needs it.
-DLSS/frame generation: not built in (no motion vectors, DLSS-G needs D3D12);
-the launcher points at NVIDIA Smooth Motion / Lossless Scaling instead.
+DLSS/frame generation: not built in (no motion vectors, DLSS-G needs D3D12).
 
 **Boot legal screen (2026-10-28):** bonus\LEGAL.xbs is six logo tiles
 (legal_00..05, one 640x512 picture), the font chis22 and legalbox.txt.

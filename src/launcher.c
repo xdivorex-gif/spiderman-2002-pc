@@ -28,7 +28,6 @@
 #define GAME_EXE   "spiderman_recomp.exe"
 #define ID_RES     101
 #define ID_ASPECT  102
-#define ID_AA      103
 #define ID_RENDER  104
 #define ID_FULL    105
 #define ID_VSYNC   106
@@ -56,7 +55,7 @@ static char    s_dir[MAX_PATH];      /* the exes' folder, with a trailing \ */
 static char    s_ini[MAX_PATH];
 static HFONT   s_font, s_title_font;
 static int     s_dpi = 96;
-static HWND    s_res, s_aspect, s_aa, s_render, s_full, s_vsync, s_prompts, s_costume;
+static HWND    s_res, s_aspect, s_render, s_full, s_vsync, s_prompts, s_costume;
 
 /* [Game] Costume: settings.ini value and what the list shows. The values are
  * recomp_manual.c's costume names; the game names only its Secret Store
@@ -136,7 +135,6 @@ static void update_enabled(void)
     BOOL gpu = combo_sel(s_render) == 0;
     EnableWindow(s_res, gpu);
     EnableWindow(s_aspect, gpu);
-    EnableWindow(s_aa, gpu);
 }
 
 static void load(void)
@@ -170,8 +168,6 @@ static void load(void)
     GetPrivateProfileStringA("Display", "AspectRatio", "stretch", v, sizeof v, s_ini);
     SendMessageA(s_aspect, CB_SETCURSEL,
                  strcmp(v, "4:3") == 0 ? 2 : strcmp(v, "widescreen") == 0 ? 0 : 1, 0);
-    SendMessageA(s_aa, CB_SETCURSEL,
-                 GetPrivateProfileIntA("Display", "Supersampling", 0, s_ini) ? 1 : 0, 0);
     GetPrivateProfileStringA("Graphics", "Renderer", "gpu", v, sizeof v, s_ini);
     SendMessageA(s_render, CB_SETCURSEL, _stricmp(v, "cpu") == 0 ? 1 : 0, 0);
     GetPrivateProfileStringA("Controls", "ButtonPrompts", "xbox", v, sizeof v, s_ini);
@@ -200,8 +196,6 @@ static int save(void)
     ok &= WritePrivateProfileStringA("Display", "AspectRatio",
                                      combo_sel(s_aspect) == 2 ? "4:3"
                                      : combo_sel(s_aspect) == 1 ? "stretch" : "widescreen", s_ini);
-    ok &= WritePrivateProfileStringA("Display", "Supersampling",
-                                     combo_sel(s_aa) == 1 ? "1" : "0", s_ini);
     ok &= WritePrivateProfileStringA("Display", "Fullscreen",
                                      SendMessageA(s_full, BM_GETCHECK, 0, 0) == BST_CHECKED
                                          ? "1" : "0", s_ini);
@@ -564,12 +558,7 @@ static void build(HWND w)
     combo_add(s_aspect, "Stretch to fill the screen");
     combo_add(s_aspect, "Original 4:3 (bars at the sides)");
     y += rh;
-    add(w, "STATIC", "Anti-aliasing", SS_LEFT, lx, y + 5, 130, 20, 0, s_font);
-    s_aa = add(w, "COMBOBOX", "", CBS_DROPDOWNLIST | WS_TABSTOP,
-               cx, y, cw, 120, ID_AA, s_font);
-    combo_add(s_aa, "Off");
-    combo_add(s_aa, "Supersampling 2x2 (sharper edges)");
-    y += rh + 4;
+    y += 4;
     /* Checkboxes without text: a themed checkbox draws its text black
      * whatever the colour asked for. The white labels beside them toggle
      * them too. */
@@ -611,8 +600,7 @@ static void build(HWND w)
     y += 40;
 
     c = add(w, "STATIC",
-            "F11 or Alt+Enter switches fullscreen in game. For frame generation, "
-            "use NVIDIA Smooth Motion or Lossless Scaling.",
+            "F11 or Alt+Enter switches fullscreen in game.",
             SS_LEFT, lx, y, 564, 40, 0, s_font);
     (void)c;
 

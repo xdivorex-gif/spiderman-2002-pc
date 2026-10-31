@@ -21,8 +21,6 @@
  *                             | 4:3: original shape, bars
  *   Fullscreen=0              1: borderless fullscreen at start (F11 toggles)
  *   VSync=1                   0: present without waiting for the display
- *   Supersampling=0           1: render at twice the size and shrink (sharper
- *                             edges, ~4x the GPU work)
  *   [Graphics]
  *   Renderer=gpu              gpu: D3D11 | cpu: the software rasteriser
  *                             (slower, the reference; always 640x480)
@@ -86,8 +84,8 @@ static void exe_dir(char *out, size_t cap)
 void settings_apply(void)
 {
     char ini[MAX_PATH], v[64];
-    unsigned w = 640, h = 480, rw, rh;
-    int i, gpu, ss, four3;
+    unsigned w = 640, h = 480;
+    int i, gpu, four3;
     const char *ps;
 
     /* 1. Defaults, unless something set up the environment already. */
@@ -129,15 +127,9 @@ void settings_apply(void)
             set("RECOMP_HOR_PLUS", NULL);
         }
     }
-    ss = GetPrivateProfileIntA("Display", "Supersampling", 0, ini) != 0;
-    rw = ss ? w * 2 : w;
-    rh = ss ? h * 2 : h;
-    if (rw > 7680 || rh > 4320) {           /* too big to render twice over */
-        rw = w; rh = h;
-    }
-    if (gpu && (rw != 640 || rh != 480)) {
+    if (gpu && (w != 640 || h != 480)) {
         char s[32];
-        sprintf(s, "%ux%u", rw, rh);
+        sprintf(s, "%ux%u", w, h);
         set("RECOMP_RENDER_SIZE", s);
         sprintf(s, "%ux%u", w, h);
         set("RECOMP_OUTPUT_SIZE", s);
