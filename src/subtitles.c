@@ -2,9 +2,10 @@
  * Subtitles. The game ships no dialogue text, so subs.txt beside the exe holds
  * transcripts of its voice lines and movies (tools/subtitles.py, whisper.cpp).
  *
- * A voice line shows when the sound layer starts it (sub_002B3F80_enter,
+ * A voice line shows when the sound layer starts it (sub_002B3D00_enter,
  * recomp_manual.c, reads the sound's name out of the instance's slot) and stays
- * for the sample's length. A movie's lines run on the clock from its first
+ * for the sample's length; a long one turns its screens ("|" in subs.txt) in
+ * step with the speech, by their share of the text. A movie's lines run on the clock from its first
  * frame; the movie's end or a skip stops them, because its texture stops
  * changing. gpu_backend.c draws what subtitles_text() returns, each flip, in
  * the game's font. settings.ini [Game] Subtitles=0 turns them off; the pause
@@ -16,7 +17,7 @@
 #include <stdlib.h>
 #include <string.h>
 
-typedef struct { const char *name; float secs; const char *text; } VoiceLine;
+typedef struct { const char *name; float secs; const char *text; int chars; } VoiceLine;
 typedef struct { const char *name; float a, b; const char *text; } MovieLine;
 
 static VoiceLine *s_voice;
@@ -24,10 +25,10 @@ static MovieLine *s_movie;
 static int s_nvoice, s_nmovie;
 static volatile int s_on = 1;
 
-/* The line showing. One pointer and one deadline: read on the render thread,
- * written on the game's; a line is a constant string. */
-static const char *volatile s_text;
-static volatile ULONGLONG s_until;
+/* The line showing. One pointer and two times: read on the render thread,
+ * written on the game's; a line is constant. */
+static const VoiceLine *volatile s_line;
+static volatile ULONGLONG s_from, s_until;
 
 /* The movie playing, set when its .bik is opened. */
 static char s_movie_name[32];
@@ -95,6 +96,10 @@ void subtitles_init(void)
             s_voice[s_nvoice].name = name;
             s_voice[s_nvoice].secs = secs;
             s_voice[s_nvoice].text = r + 1;
+            s_voice[s_nvoice].chars = (int)strlen(r + 1);
+            for (r++; *r; r++)                  /* each screen its own string */
+                if (*r == '|')
+                    *r = 0;
             s_nvoice++;
         } else if (kind == 'm') {
             float a = (float)strtod(q, &r), b = (float)strtod(r, &r);
@@ -141,13 +146,28 @@ void subtitles_voice(const char *name)
         fprintf(stderr, "[SUBS] sound %.31s: %s\n", name, hit ? hit->text : "-");
     if (!hit)
         return;
-    if (s_text == hit->text && GetTickCount64() < s_until)
+    if (s_line == hit && GetTickCount64() < s_until)
         return;                         /* the same line, still showing */
     secs = hit->secs + 0.4f;            /* a moment to finish reading */
     if (secs < 1.6f)
         secs = 1.6f;
-    s_until = GetTickCount64() + (ULONGLONG)(secs * 1000.0f);
-    s_text = hit->text;
+    s_from = GetTickCount64();
+    s_until = s_from + (ULONGLONG)(secs * 1000.0f);
+    s_line = hit;
+}
+
+/* The screen of a voice line due now. */
+static const char *voice_screen(const VoiceLine *v, ULONGLONG now)
+{
+    const char *p = v->text, *end = v->text + v->chars;
+    float at = (float)(now - s_from) / 1000.0f / v->secs * (float)v->chars;
+
+    for (;;) {
+        const char *q = p + strlen(p);
+        if (q >= end || at < (float)(q - v->text))
+            return p;
+        p = q + 1;
+    }
 }
 
 /* A .bik was opened: path without directory or extension. */
@@ -191,5 +211,5 @@ const char *subtitles_text(void)
                 return s_movie[i].text;
         return NULL;
     }
-    return now < s_until ? s_text : NULL;
+    return now < s_until && s_line ? voice_screen(s_line, now) : NULL;
 }

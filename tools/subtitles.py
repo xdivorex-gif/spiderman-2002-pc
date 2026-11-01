@@ -9,7 +9,7 @@ Voice lines are the sound-bank entries named speaker + scene + number
 (smaiv063, krbzb012). The rest of the banks are effects and music. Work files go
 to cap\subs\. subs.txt: one line per sound or movie line,
 
-    v <sound name> <seconds> <text>
+    v <sound name> <seconds> <text, "|" between the screens of a long line>
     m <movie name> <start s> <end s> <text>
 
 Fix a wrong line by editing cap\subs\fixes.txt ("<name or name@start> <text>";
@@ -125,14 +125,34 @@ INVENTED = re.compile(r"thank(s| you) for watching|subscribe|subtitles? by|capti
 NOISE = re.compile(r"^[\s\[\(\*♪.…-]*(music|applause|silence|blank_audio|laugh\w*|grunt\w*|"
                    r"sigh\w*|gasp\w*|groan\w*|breath\w*|inaudible|sound\w*)?[\s\]\)\*♪.…-]*$", re.I)
 
+# A fight's grunts: captioning each would keep a bar on screen through every punch.
+GRUNT = re.compile(r"^(ugh|oof|ah|huh|oh|ha|gah|augh|huah|pfft|hmm|arf)[.!?]*$", re.I)
+
 
 def clean(t):
-    t = re.sub(r"\[[^\]]*\]|\([^)]*\)|♪", " ", t)
+    t = re.sub(r"\[[^\]]*\]|\([^)]*\)|\*[^*]*\*|♪", " ", t)
     t = re.sub(r"\s+", " ", t).strip()
     # The font has no accents or curly quotes.
     t = t.replace("’", "'").replace("“", '"').replace("”", '"').replace("—", "-")
-    t = t.encode("ascii", "ignore").decode()
-    return "" if NOISE.match(t) or INVENTED.search(t) else t
+    t = t.encode("ascii", "ignore").decode().lstrip("- ")
+    return "" if NOISE.match(t) or INVENTED.search(t) or GRUNT.match(t) else t
+
+
+def pages(t, most=150):
+    """A long line as screens of two lines or so, "|" between them, at sentence ends if it can."""
+    if len(t) <= most:
+        return t
+    out, cur = [], ""
+    for part in re.split(r"(?<=[.!?,;])\s+", t):
+        while len(part) > most:
+            cut = part.rfind(" ", 0, most)
+            out.append((cur + " " + part[:cut]).strip() if cur else part[:cut])
+            cur, part = "", part[cut + 1:]
+        if cur and len(cur) + 1 + len(part) > most:
+            out.append(cur)
+            cur = ""
+        cur = (cur + " " + part).strip()
+    return "|".join(out + [cur] if cur else out)
 
 
 def ms(ts):
@@ -156,7 +176,7 @@ def build():
         text = clean(" ".join(s["text"] for s in d.get("transcription", [])))
         text = fixes.get(name, text)
         if text:
-            out.append("v %s %.2f %s" % (name, secs.get(name, 3.0), text))
+            out.append("v %s %.2f %s" % (name, secs.get(name, 3.0), pages(text)))
     for j in sorted(glob.glob(os.path.join(MOVIE, "*.wav.json"))):
         name = os.path.basename(j)[:-9]
         d = json.load(open(j, encoding="utf-8", errors="replace"))
