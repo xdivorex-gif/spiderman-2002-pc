@@ -495,12 +495,21 @@ static DWORD WINAPI sampler_main(LPVOID arg)
  * while the process runs on (the picture frozen, sound still playing), take
  * 300 rounds of every thread's stack into hang_stacks.txt -- once -- so the
  * stuck thread can be read off with tools/samples.py. On unless
- * RECOMP_HANG_WATCH=0; costs one counter read every half second. */
+ * RECOMP_HANG_WATCH=0; costs one counter read every half second.
+ *
+ * It also recovers the one freeze seen so far (2026-10-31, opening the pause
+ * menu in cath_B): the game thread waiting with no timeout on D3D's fence
+ * event (device+0x2440, sub_002F2B00) for a GPU interrupt's wake-up that was
+ * lost, with the executor idle. After 1.5 s without a frame the event is set,
+ * and again every 1.5 s until frames come. Outside that freeze the worst case
+ * is one fence wait returning early, once, after a long loading screen. */
 static DWORD WINAPI hang_watch_main(LPVOID unused)
 {
     extern unsigned long gpu_backend_flip_count(void);
+    extern int xbox_SetGuestEvent(uint32_t guest_va);
+    extern ptrdiff_t g_xbox_mem_offset;
     unsigned long last = 0;
-    int still = 0;
+    int still = 0, sampled = 0;
 
     (void)unused;
     for (;;) {
@@ -508,10 +517,17 @@ static DWORD WINAPI hang_watch_main(LPVOID unused)
         Sleep(500);
         now = gpu_backend_flip_count();
         if (now && now == last) {
-            if (++still == 8) {
-                fprintf(stderr, "[HANG] no frame for 4 s after %lu: sampling every thread\n", now);
+            ++still;
+            if (still % 3 == 0) {
+                uint32_t dev = *(volatile uint32_t *)((uint8_t *)g_xbox_mem_offset + 0x3038E0);
+                if (dev && xbox_SetGuestEvent(dev + 0x2440))
+                    fprintf(stderr, "[HANG] no frame for %d.%d s after %lu: set D3D's fence event\n",
+                            still / 2, still % 2 ? 5 : 0, now);
+            }
+            if (still == 12 && !sampled) {   /* the wake did not help: for the record */
+                sampled = 1;
+                fprintf(stderr, "[HANG] no frame for 6 s after %lu: sampling every thread\n", now);
                 sample_into("hang_stacks.txt", 1, 300);
-                return 0;
             }
         } else {
             still = 0;

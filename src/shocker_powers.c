@@ -201,23 +201,38 @@ void level_restart_request(void)
     InterlockedExchange(&s_restart_wanted, 1);
 }
 
+static void level_load_names(const char *level, const char *hero, int n);
+
 static void level_restart_run(void)
 {
-    uint32_t app = GUEST32(0x4BC614), esp = g_esp, base, args[3], i;
+    uint32_t app = GUEST32(0x4BC614), i;
+    char level[256], hero[256];
+
+    if (!app)
+        return;
+    for (i = 0; i < 256; i++) {          /* the callee copies onto the originals */
+        level[i] = ((const char *)g_xbox_mem_offset + 0x4BC948)[i];
+        hero[i] = ((const char *)g_xbox_mem_offset + 0x4BC848)[i];
+    }
+    level[255] = hero[255] = 0;
+    level_load_names(level, hero, (int)GUEST32(app + 0x114));
+}
+
+static void level_load_names(const char *level, const char *hero, int n)
+{
+    uint32_t app = GUEST32(0x4BC614), esp = g_esp, base, args[3];
 
     if (!app)
         return;
     g_esp -= 0x400;
     base = g_esp;
-    for (i = 0; i < 0x100; i += 4) {     /* the callee copies onto the originals */
-        GUEST32(base + 0x20 + i) = GUEST32(0x4BC948 + i);
-        GUEST32(base + 0x120 + i) = GUEST32(0x4BC848 + i);
-    }
+    strcpy((char *)g_xbox_mem_offset + base + 0x20, level);
+    strcpy((char *)g_xbox_mem_offset + base + 0x120, hero);
     GUEST32(base + 4) = base + 0x20;
     GUEST32(base + 0x14) = base + 0x120;
     args[0] = base;
     args[1] = base + 0x10;
-    args[2] = GUEST32(app + 0x114);
+    args[2] = (uint32_t)n;
     fprintf(stderr, "  [COSTUME] load_level(\"%s\", \"%s\", %d)\n",
             (const char *)g_xbox_mem_offset + base + 0x20,
             (const char *)g_xbox_mem_offset + base + 0x120,
@@ -236,6 +251,27 @@ void shocker_powers_frame(void)
     uint32_t world, hero;
     int tornado, blast;
 
+    /* RECOMP_TEST_LEVEL=<seconds>,<level>,<hero>,<n>: load that level once,
+     * that long after start, for measuring one scene the same way each run. */
+    {
+        static int test_done;
+        static DWORD t0;
+        const char *e;
+        if (!t0)
+            t0 = t;
+        if (!test_done && t - t0 > 3000 && (e = getenv("RECOMP_TEST_LEVEL")) != NULL) {
+            char level[128], hero[128];
+            int secs, n;
+            if (sscanf(e, "%d,%127[^,],%127[^,],%d", &secs, level, hero, &n) != 4) {
+                test_done = 1;
+            } else if (t - t0 > (DWORD)secs * 1000 && !s_busy) {
+                test_done = 1;
+                s_busy = 1;
+                level_load_names(level, hero, n);
+                s_busy = 0;
+            }
+        }
+    }
     if (s_restart_wanted && !s_busy) {
         InterlockedExchange(&s_restart_wanted, 0);
         s_busy = 1;
