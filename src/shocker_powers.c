@@ -34,6 +34,8 @@ extern __declspec(thread) uint32_t g_eax, g_ecx, g_edx, g_esp, g_ebx, g_esi, g_e
 extern __declspec(thread) int g_fp_top;
 
 void sub_0012BBE0(void);            /* world: radius damage */
+void sub_000ED460(void);            /* app: load_level(level, hero, n) */
+void sub_000ED320(void);            /* app: leave the pause (pause_game(0)) */
 void sub_0015B8E0(void);            /* entity: its position (a vector3d *) */
 int costume_worn_index(void);
 
@@ -187,6 +189,44 @@ static void blast_hit(uint32_t world, uint32_t hero)
     }
 }
 
+/* Restart the level now, as the script call load_level(level, hero, n) would
+ * with what the running level was loaded with: sub_000ED460 on the app
+ * ([0x4BC614]) keeps the two names (0x4BC948, 0x4BC848; it reads the char *
+ * at +4 of each string object) and n (app+0x114), and flags the main loop to
+ * reload. Run from the script engine's entry, where a script's call would be. */
+static volatile LONG s_restart_wanted;
+
+void level_restart_request(void)
+{
+    InterlockedExchange(&s_restart_wanted, 1);
+}
+
+static void level_restart_run(void)
+{
+    uint32_t app = GUEST32(0x4BC614), esp = g_esp, base, args[3], i;
+
+    if (!app)
+        return;
+    g_esp -= 0x400;
+    base = g_esp;
+    for (i = 0; i < 0x100; i += 4) {     /* the callee copies onto the originals */
+        GUEST32(base + 0x20 + i) = GUEST32(0x4BC948 + i);
+        GUEST32(base + 0x120 + i) = GUEST32(0x4BC848 + i);
+    }
+    GUEST32(base + 4) = base + 0x20;
+    GUEST32(base + 0x14) = base + 0x120;
+    args[0] = base;
+    args[1] = base + 0x10;
+    args[2] = GUEST32(app + 0x114);
+    fprintf(stderr, "  [COSTUME] load_level(\"%s\", \"%s\", %d)\n",
+            (const char *)g_xbox_mem_offset + base + 0x20,
+            (const char *)g_xbox_mem_offset + base + 0x120,
+            (int)args[2]);
+    guest_call(sub_000ED320, app, NULL, 0);     /* a paused game never gets to the reload */
+    guest_call(sub_000ED460, app, args, 3);
+    g_esp = esp;
+}
+
 /* The script engine's entry (sub_00051C00_enter, recomp_manual.c): the
  * game thread, many times a frame. */
 void shocker_powers_frame(void)
@@ -196,6 +236,12 @@ void shocker_powers_frame(void)
     uint32_t world, hero;
     int tornado, blast;
 
+    if (s_restart_wanted && !s_busy) {
+        InterlockedExchange(&s_restart_wanted, 0);
+        s_busy = 1;
+        level_restart_run();
+        s_busy = 0;
+    }
     if (s_busy || (!s_tornado_at && !s_blast_at))
         return;
     tornado = s_tornado_at && t - last_tick >= TICK_MS

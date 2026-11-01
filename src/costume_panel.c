@@ -21,9 +21,10 @@
  * script call is_paused() returns), a hint in the corner offers Y /
  * Triangle; that opens the costume list over the pause menu. Up / down
  * choose, A applies, B closes. Apply writes the choice (and settings.ini),
- * closes the panel and restarts the level through the pause menu's own
- * Restart Level, by pressing its buttons (RECOMP_COSTUME_RESTART, below):
- * the hero is built at level load, so a new costume needs a new start.
+ * closes the panel and restarts the level at once (level_restart_request,
+ * shocker_powers.c): the hero is built at level load, so a new costume
+ * needs a new start. RECOMP_COSTUME_RESTART, if set, presses the pause
+ * menu's own Restart Level instead (below).
  *
  * Input goes through the toolkit's report filter (usb_gamepad.h), which sees
  * every pad report just before the game does -- the pad, the keyboard and
@@ -44,6 +45,7 @@
  * panel is open.
  */
 #include <windows.h>
+#include <mmsystem.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -291,6 +293,45 @@ static void inject(uint8_t *r)
 void shocker_input_filter(uint8_t *r);  /* shocker_input.c */
 
 static volatile int s_open, s_sel, s_paused;
+static volatile int s_confirm, s_confirm_sel;     /* the "are you sure?" prompt: 0 Ok, 1 Cancel */
+
+/* The pause menu's sounds: its own samples, tools/panel_assets.py
+ * (panel\<name>.wav beside the exe), kept in memory and played from here. */
+enum { SND_SCROLL, SND_CONFIRM, SND_BACK, N_SND };
+static void *s_snd[N_SND];
+
+static void *panel_file(const char *name, size_t *size)
+{
+    char path[MAX_PATH];
+    size_t n = GetModuleFileNameA(NULL, path, MAX_PATH);
+    FILE *f;
+    void *d = NULL;
+    long len;
+
+    while (n && path[n - 1] != '\\')
+        n--;
+    _snprintf(path + n, MAX_PATH - n, "panel\\%s", name);
+    path[MAX_PATH - 1] = 0;
+    if (!(f = fopen(path, "rb")))
+        return NULL;
+    fseek(f, 0, SEEK_END);
+    len = ftell(f);
+    fseek(f, 0, SEEK_SET);
+    if (len > 0 && (d = malloc((size_t)len)) && fread(d, 1, (size_t)len, f) != (size_t)len) {
+        free(d);
+        d = NULL;
+    }
+    fclose(f);
+    if (size)
+        *size = (size_t)len;
+    return d;
+}
+
+static void menu_sound(int which)
+{
+    if (s_snd[which])
+        PlaySoundA((const char *)s_snd[which], NULL, SND_MEMORY | SND_ASYNC | SND_NODEFAULT);
+}
 static volatile int s_turn;             /* the 3D view: -1 / 0 / +1, held */
 static int s_swallow;                   /* eat the pad until all is released */
 
@@ -329,9 +370,14 @@ static void apply(int row)
         WritePrivateProfileStringA("Game", "Costume", s_costumes[row].name, ini);
     fprintf(stderr, "  [COSTUME] panel: %s, restarting the level\n", s_costumes[row].name);
     fflush(stderr);
-    restart_parse();
-    s_inject_t0 = GetTickCount();
-    s_inject_on = 1;
+    if (getenv("RECOMP_COSTUME_RESTART")) {
+        restart_parse();
+        s_inject_t0 = GetTickCount();
+        s_inject_on = 1;
+    } else {
+        extern void level_restart_request(void);
+        level_restart_request();
+    }
 }
 
 static void filter(int pad, uint8_t *r)
@@ -355,6 +401,7 @@ static void filter(int pad, uint8_t *r)
 
     if (!s_paused) {
         s_open = 0;
+        s_confirm = 0;
         s_swallow = 0;
         shocker_input_filter(r);
         return;
@@ -378,6 +425,29 @@ static void filter(int pad, uint8_t *r)
         return;
     }
 
+    if (s_confirm) {
+        if (edge & (BTN_UP | BTN_DOWN)) {
+            s_confirm_sel = !s_confirm_sel;
+            menu_sound(SND_SCROLL);
+        }
+        if (edge & BTN_B) {
+            s_confirm = 0;
+            menu_sound(SND_BACK);
+        } else if (edge & BTN_A) {
+            s_confirm = 0;
+            if (s_confirm_sel) {
+                menu_sound(SND_BACK);
+            } else {
+                menu_sound(SND_CONFIRM);
+                s_open = 0;
+                s_swallow = 1;          /* the A still down is not the menu's */
+                apply(s_sel);
+            }
+        }
+        memset(r + 2, 0, 18);
+        return;
+    }
+
     /* Open: L1 / R1 or the right stick turn the model, up / down with
      * repeat choose, A apply, B close. */
     {
@@ -396,8 +466,9 @@ static void filter(int pad, uint8_t *r)
     if (edge & BTN_DOWN)
         s_sel = (s_sel + 1) % N_COSTUMES;
     if (edge & BTN_A) {
-        s_open = 0;
-        apply(s_sel);
+        s_confirm = 1;
+        s_confirm_sel = 0;
+        menu_sound(SND_CONFIRM);
     } else if (edge & BTN_B) {
         s_open = 0;
         s_swallow = 1;
@@ -407,6 +478,9 @@ static void filter(int pad, uint8_t *r)
 
 void costume_panel_init(void)
 {
+    s_snd[SND_SCROLL] = panel_file("button_scroll.wav", NULL);
+    s_snd[SND_CONFIRM] = panel_file("button_confirm.wav", NULL);
+    s_snd[SND_BACK] = panel_file("button_back.wav", NULL);
     read_choice();
     usb_gamepad_set_report_filter(filter);
 }
@@ -818,6 +892,118 @@ static void draw_panel(void)
          DT_CENTER | DT_VCENTER, s);
 }
 
+/* ── The prompt, drawn as the pause menu is ─────────────────────── */
+
+/* panel\font.bin (tools/panel_assets.py): the game's chiselwide 36px --
+ * atlas size, 256 glyphs, then the atlas's ARGB texels. */
+typedef struct { int16_t x, y, cw, ch, ox, oy, adv, gw; } Glyph;
+static const uint32_t *s_atlas;
+static const Glyph *s_glyphs;
+static uint32_t s_aw, s_ah;
+
+static int font_ready(void)
+{
+    static int tried;
+    if (!tried) {
+        size_t size = 0;
+        const uint8_t *d = (const uint8_t *)panel_file("font.bin", &size);
+        tried = 1;
+        if (d && size > 8 + 256 * sizeof(Glyph)) {
+            s_aw = ((const uint32_t *)d)[0];
+            s_ah = ((const uint32_t *)d)[1];
+            s_glyphs = (const Glyph *)(d + 8);
+            s_atlas = (const uint32_t *)(d + 8 + 256 * sizeof(Glyph));
+        }
+    }
+    return s_atlas != NULL;
+}
+
+/* One line centred on (cx, top), in the guest's 640x480 units stretched to
+ * the frame as the game's own 2D is; size 1 is the font's 36 px. Bilinear;
+ * c (RGB) multiplies the glyph's colour. The font has capitals only: as in
+ * the pause menu, a lower-case letter is the capital drawn smaller, on the
+ * same baseline (31 down the 41-texel cell). */
+static void game_text(float cx, float top, float size, COLORREF c, const char *t)
+{
+    float sx0 = s_bw / 640.0f * size, sy0 = s_bh / 480.0f * size, pen = 0;
+    const char *q;
+    int cr = GetRValue(c), cg = GetGValue(c), cb = GetBValue(c);
+
+    for (q = t; *q; q++)
+        pen += s_glyphs[(uint8_t)*q].adv * (*q >= 'a' && *q <= 'z' ? 0.8f : 1.0f);
+    pen = cx * s_bw / 640.0f - pen * sx0 * 0.5f;
+    for (q = t; *q; q++) {
+        const Glyph *g = &s_glyphs[(uint8_t)*q];
+        float small = *q >= 'a' && *q <= 'z' ? 0.8f : 1.0f;
+        float sx = sx0 * small, sy = sy0 * small;
+        int dw = (int)(g->cw * sx), dh = (int)(g->ch * sy), x, y;
+        int x0 = (int)(pen - 2 * sx);
+        int y0 = (int)(top * s_bh / 480.0f + 31.0f * (sy0 - sy));
+        for (y = 0; y < dh; y++) {
+            int dy = y0 + y;
+            float v = g->y + (y + 0.5f) / sy - 0.5f;
+            int iv = (int)v;
+            float fv = v - iv;
+            if (dy < 0 || dy >= (int)s_bh || iv < 0 || iv + 1 >= (int)s_ah)
+                continue;
+            for (x = 0; x < dw; x++) {
+                int dx = x0 + x, iu, k, a;
+                float u = g->x + (x + 0.5f) / sx - 0.5f, fu, w[4], ch[4] = { 0, 0, 0, 0 };
+                const uint32_t *row;
+                uint8_t *p;
+                iu = (int)u;
+                if (dx < 0 || dx >= (int)s_bw || iu < 0 || iu + 1 >= (int)s_aw)
+                    continue;
+                fu = u - iu;
+                w[0] = (1 - fu) * (1 - fv); w[1] = fu * (1 - fv);
+                w[2] = (1 - fu) * fv;       w[3] = fu * fv;
+                row = s_atlas + (size_t)iv * s_aw + iu;
+                for (k = 0; k < 4; k++) {
+                    uint32_t t4 = k < 2 ? row[k] : row[s_aw + k - 2];
+                    float ta = (t4 >> 24) * w[k];
+                    ch[0] += ta;
+                    ch[1] += ((t4 >> 16) & 255) * ta;
+                    ch[2] += ((t4 >> 8) & 255) * ta;
+                    ch[3] += (t4 & 255) * ta;
+                }
+                a = (int)ch[0];
+                if (a <= 0)
+                    continue;
+                p = s_bits + ((size_t)dy * s_bw + dx) * 4;
+                p[2] = (uint8_t)((p[2] * (255 - a) + ch[1] / ch[0] * cr / 255 * a) / 255);
+                p[1] = (uint8_t)((p[1] * (255 - a) + ch[2] / ch[0] * cg / 255 * a) / 255);
+                p[0] = (uint8_t)((p[0] * (255 - a) + ch[3] / ch[0] * cb / 255 * a) / 255);
+            }
+        }
+        pen += g->adv * sx;
+    }
+}
+
+static void draw_confirm(void)
+{
+    /* Up to ~20% dimmer and back, about once a second, on the selected line. */
+    int pulse = 215 + (int)(40.0f * sinf(GetTickCount() * 0.0063f));
+    COLORREF on = RGB(pulse, pulse, pulse), off = RGB(170, 170, 170);
+    int ok = s_confirm_sel == 0;
+    int u = (int)(s_bh / 480.0 * 16 + 0.5);
+    wchar_t foot[96];
+
+    shade(0, 0, (int)s_bw, (int)s_bh, 40);
+    if (font_ready()) {
+        game_text(320, 140, 1.0f, RGB(150, 22, 22), "Are you sure?");
+        game_text(320, 190, 0.5f, RGB(190, 190, 190), "Restart at the beginning of level?");
+        game_text(320, 238, ok ? 0.9f : 0.62f, ok ? on : off, "Ok");
+        game_text(320, 276, ok ? 0.62f : 0.9f, ok ? off : on, "Cancel");
+    } else {
+        text(s_font_title, RGB(200, 30, 30), 0, (int)s_bh / 3, (int)s_bw, u * 3, DT_CENTER, L"Are you sure?");
+        text(s_font_item, ok ? RGB(255, 255, 255) : RGB(170, 170, 170), 0, (int)s_bh / 2, (int)s_bw, u * 2, DT_CENTER, L"Ok");
+        text(s_font_item, ok ? RGB(170, 170, 170) : RGB(255, 255, 255), 0, (int)s_bh / 2 + u * 2, (int)s_bw, u * 2, DT_CENTER, L"Cancel");
+    }
+    _snwprintf(foot, 96, L"%s Select      %s Exit", face('a'), face('b'));
+    foot[95] = 0;
+    text(s_font_small, RGB(220, 220, 220), 0, (int)(s_bh * 0.8), (int)s_bw, u * 2, DT_CENTER | DT_VCENTER, foot);
+}
+
 /* Whether costume_panel_draw would draw on this frame: the back end then
  * sends the frame through the CPU instead of sharing it on the GPU. */
 int costume_panel_wants_frame(void)
@@ -838,9 +1024,12 @@ void costume_panel_draw(const void **pixels, uint32_t w, uint32_t h, uint32_t *p
     for (y = 0; y < h; y++)
         memcpy(s_bits + (size_t)y * w * 4, (const uint8_t *)*pixels + (size_t)y * *pitch, w * 4);
     SetBkMode(s_dc, TRANSPARENT);
-    if (s_open)
+    if (s_open) {
         draw_panel();
-    else
+        if (s_confirm)
+            draw_confirm();
+    }
+    if (!s_open)
         draw_hint();
     GdiFlush();
     *pixels = s_bits;
