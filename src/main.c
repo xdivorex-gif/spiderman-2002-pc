@@ -670,6 +670,10 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance,
         settings_apply();
         costume_panel_init();   /* costume choice + pause-menu panel */
         movie_upscale_init();   /* movies\<name>.mp4 for the title's Bink */
+        {
+            extern void subtitles_init(void);
+            subtitles_init();
+        }
     }
 
     /* Unbuffered output for immediate visibility during debugging */

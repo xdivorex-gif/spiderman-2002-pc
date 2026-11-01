@@ -54,6 +54,13 @@ static void on_open(const WCHAR *path)
     dot = wcsrchr(name, L'.');
     if (!dot || _wcsicmp(dot, L".bik") != 0)
         return;
+    {
+        extern void subtitles_movie_opened(const char *name);
+        char a[32];
+        _snprintf(a, sizeof a - 1, "%.*ls", (int)(dot - name), name);
+        a[sizeof a - 1] = 0;
+        subtitles_movie_opened(a);
+    }
     n = GetModuleFileNameW(NULL, mp4, MAX_PATH);
     while (n && mp4[n - 1] != L'\\')
         n--;

@@ -298,6 +298,9 @@ extern void xbox_FramebufferWindowPresentHiRes(const void *pixels, uint32_t w, u
 extern void xbox_FramebufferWindowPresentShared(void *handle, uint32_t w, uint32_t h, int slot);
 extern int costume_panel_wants_frame(void);
 extern const uint32_t *movie_upscale_texture(uint32_t *w, uint32_t *h);   /* movie_upscale.c */
+extern void subtitles_movie_frame(void);                 /* subtitles.c */
+extern int subtitles_in_movie(void);
+extern const char *subtitles_text(void);
 
 static void render_size_init(void)
 {
@@ -1196,6 +1199,7 @@ static ID3D11ShaderResourceView *texture_srv(const Nv2aTexture *t)
      * each frame) of a movie with an upscaled copy: that copy's frame. */
     if (t->width == 640 && t->height == 480 && t->color == 0x12) {
         uint32_t mw, mh;
+        subtitles_movie_frame();
         const uint32_t *m = movie_upscale_texture(&mw, &mh);
         if (m) {
             pack = NULL;
@@ -1841,6 +1845,207 @@ static void queue_readback(Surf *r)
     r->pending = 1;
 }
 
+/* ---- subtitles: subtitles.c's line in the game's font, on the frame ------- */
+
+static const char s_hlsl_sub[] =
+"Texture2D t : register(t0); SamplerState s : register(s0);\n"
+"cbuffer C : register(b3) { float4 rect; float4 uv; float4 col; };\n"
+"struct V { float4 p : SV_Position; float2 uv : TEXCOORD0; };\n"
+"V vs(uint i : SV_VertexID) { V o; float2 q = float2(i & 1, i >> 1);\n"
+"  o.uv = lerp(uv.xy, uv.zw, q); o.p = float4(lerp(rect.xy, rect.zw, q), 0, 1); return o; }\n"
+"float4 ps(V i) : SV_Target { if (uv.x < 0) return col;\n"
+"  float4 c = t.Sample(s, i.uv); return float4(saturate(c.rgb * col.rgb), c.a * col.a); }\n";
+
+typedef struct { int16_t x, y, cw, ch, ox, oy, adv, gw; } SubGlyph;     /* panel\\font.bin */
+static ID3D11VertexShader *s_vs_sub;
+static ID3D11PixelShader *s_ps_sub;
+static ID3D11Buffer *s_cb_sub;
+static ID3D11BlendState *s_blend_sub;
+static ID3D11ShaderResourceView *s_font_srv;
+static const SubGlyph *s_sub_glyph;
+static uint32_t s_font_w, s_font_h;
+
+static int subtitles_gpu_init(void)
+{
+    static int tried;
+    char path[MAX_PATH];
+    size_t n;
+    FILE *f;
+    uint8_t *d;
+    long len;
+    ID3DBlob *vsb = NULL, *psb = NULL;
+    D3D11_BUFFER_DESC bd;
+    D3D11_BLEND_DESC bl;
+    D3D11_TEXTURE2D_DESC td;
+    D3D11_SUBRESOURCE_DATA sr;
+    ID3D11Texture2D *tex = NULL;
+
+    if (tried)
+        return s_font_srv != NULL;
+    tried = 1;
+    n = GetModuleFileNameA(NULL, path, MAX_PATH);
+    while (n && path[n - 1] != '\\')
+        n--;
+    _snprintf(path + n, MAX_PATH - n, "panel\\font.bin");
+    path[MAX_PATH - 1] = 0;
+    if (!(f = fopen(path, "rb")))
+        return 0;
+    fseek(f, 0, SEEK_END);
+    len = ftell(f);
+    fseek(f, 0, SEEK_SET);
+    d = (uint8_t *)malloc((size_t)len);
+    if (!d || fread(d, 1, (size_t)len, f) != (size_t)len) {
+        fclose(f);
+        return 0;
+    }
+    fclose(f);
+    s_font_w = ((const uint32_t *)d)[0];
+    s_font_h = ((const uint32_t *)d)[1];
+    s_sub_glyph = (const SubGlyph *)(d + 8);
+    if (FAILED(D3DCompile(s_hlsl_sub, sizeof s_hlsl_sub - 1, "sub", NULL, NULL, "vs", "vs_5_0",
+                          0, 0, &vsb, NULL))
+        || FAILED(D3DCompile(s_hlsl_sub, sizeof s_hlsl_sub - 1, "sub", NULL, NULL, "ps", "ps_5_0",
+                             0, 0, &psb, NULL))) {
+        fprintf(stderr, "  [SUBS] shader failed\n");
+        return 0;
+    }
+    ID3D11Device_CreateVertexShader(s_dev, ID3D10Blob_GetBufferPointer(vsb),
+                                    ID3D10Blob_GetBufferSize(vsb), NULL, &s_vs_sub);
+    ID3D11Device_CreatePixelShader(s_dev, ID3D10Blob_GetBufferPointer(psb),
+                                   ID3D10Blob_GetBufferSize(psb), NULL, &s_ps_sub);
+    ID3D10Blob_Release(vsb);
+    ID3D10Blob_Release(psb);
+    memset(&bd, 0, sizeof bd);
+    bd.ByteWidth = 48;
+    bd.Usage = D3D11_USAGE_DEFAULT;
+    bd.BindFlags = D3D11_BIND_CONSTANT_BUFFER;
+    ID3D11Device_CreateBuffer(s_dev, &bd, NULL, &s_cb_sub);
+    memset(&bl, 0, sizeof bl);
+    bl.RenderTarget[0].BlendEnable = TRUE;
+    bl.RenderTarget[0].SrcBlend = D3D11_BLEND_SRC_ALPHA;
+    bl.RenderTarget[0].DestBlend = D3D11_BLEND_INV_SRC_ALPHA;
+    bl.RenderTarget[0].BlendOp = D3D11_BLEND_OP_ADD;
+    bl.RenderTarget[0].SrcBlendAlpha = D3D11_BLEND_ONE;
+    bl.RenderTarget[0].DestBlendAlpha = D3D11_BLEND_ZERO;
+    bl.RenderTarget[0].BlendOpAlpha = D3D11_BLEND_OP_ADD;
+    bl.RenderTarget[0].RenderTargetWriteMask = D3D11_COLOR_WRITE_ENABLE_ALL;
+    ID3D11Device_CreateBlendState(s_dev, &bl, &s_blend_sub);
+    memset(&td, 0, sizeof td);
+    td.Width = s_font_w; td.Height = s_font_h; td.MipLevels = 1; td.ArraySize = 1;
+    td.Format = DXGI_FORMAT_B8G8R8A8_UNORM; td.SampleDesc.Count = 1;
+    td.Usage = D3D11_USAGE_IMMUTABLE; td.BindFlags = D3D11_BIND_SHADER_RESOURCE;
+    sr.pSysMem = d + 8 + 256 * sizeof(SubGlyph);
+    sr.SysMemPitch = s_font_w * 4;
+    sr.SysMemSlicePitch = 0;
+    if (FAILED(ID3D11Device_CreateTexture2D(s_dev, &td, &sr, &tex)))
+        return 0;
+    ID3D11Device_CreateShaderResourceView(s_dev, (ID3D11Resource *)tex, NULL, &s_font_srv);
+    ID3D11Texture2D_Release(tex);
+    return s_vs_sub && s_ps_sub && s_cb_sub && s_blend_sub && s_font_srv;
+}
+
+static void sub_quad(float w, float h, float x0, float y0, float x1, float y1,
+                     float u0, float v0, float u1, float v1,
+                     float r, float g, float b, float a)
+{
+    float c[12];
+    c[0] = x0 / w * 2 - 1; c[1] = 1 - y0 / h * 2;
+    c[2] = x1 / w * 2 - 1; c[3] = 1 - y1 / h * 2;
+    c[4] = u0; c[5] = v0; c[6] = u1; c[7] = v1;
+    c[8] = r; c[9] = g; c[10] = b; c[11] = a;
+    ID3D11DeviceContext_UpdateSubresource(s_ctx, (ID3D11Resource *)s_cb_sub, 0, NULL, c, 0, 0);
+    ID3D11DeviceContext_Draw(s_ctx, 4, 0);
+}
+
+#define SUB_SMALL(ch) ((ch) >= 'a' && (ch) <= 'z' ? 0.8f : 1.0f)
+
+/* The line drawn into r, wrapped, centred, on a dark bar: at the frame's foot
+ * in a movie (its letterbox), above the compass in play. */
+static void subtitles_draw(Surf *r)
+{
+    const char *text = subtitles_text();
+    const char *line[4], *end[4], *p;
+    float w = (float)r->rw, h = (float)r->rh, scale, maxw, lh, y, wid[4];
+    ID3D11ShaderResourceView *none = NULL;
+    D3D11_VIEWPORT vp;
+    int nl = 0, i;
+
+    if (!text || !*text || !subtitles_gpu_init())
+        return;
+    scale = h / 480.0f * 0.5f;          /* the font is 36 px at 480 lines */
+    lh = 30.0f * scale;
+    maxw = w * 0.78f;
+    /* Wrap on spaces. */
+    for (p = text; *p && nl < 4; ) {
+        const char *q = p, *brk = NULL;
+        float x = 0;
+        while (*q) {
+            x += s_sub_glyph[(uint8_t)*q].adv * SUB_SMALL(*q) * scale;
+            if (*q == ' ')
+                brk = q;
+            if (x > maxw && brk)
+                break;
+            q++;
+        }
+        if (!*q)
+            brk = q;
+        line[nl] = p;
+        end[nl] = brk;
+        wid[nl] = 0;
+        for (q = p; q < brk; q++)
+            wid[nl] += s_sub_glyph[(uint8_t)*q].adv * SUB_SMALL(*q) * scale;
+        nl++;
+        p = *brk ? brk + 1 : brk;
+    }
+    y = (subtitles_in_movie() ? h * 0.97f : h * 0.78f) - nl * lh;
+
+    ID3D11DeviceContext_OMSetRenderTargets(s_ctx, 1, &r->rtv, NULL);
+    memset(&vp, 0, sizeof vp);
+    vp.Width = w; vp.Height = h; vp.MaxDepth = 1.0f;
+    ID3D11DeviceContext_RSSetViewports(s_ctx, 1, &vp);
+    ID3D11DeviceContext_IASetInputLayout(s_ctx, NULL);
+    ID3D11DeviceContext_IASetPrimitiveTopology(s_ctx, D3D11_PRIMITIVE_TOPOLOGY_TRIANGLESTRIP);
+    ID3D11DeviceContext_VSSetShader(s_ctx, s_vs_sub, NULL, 0);
+    ID3D11DeviceContext_PSSetShader(s_ctx, s_ps_sub, NULL, 0);
+    ID3D11DeviceContext_VSSetConstantBuffers(s_ctx, 3, 1, &s_cb_sub);
+    ID3D11DeviceContext_PSSetConstantBuffers(s_ctx, 3, 1, &s_cb_sub);
+    ID3D11DeviceContext_PSSetShaderResources(s_ctx, 0, 1, &s_font_srv);
+    ID3D11DeviceContext_PSSetSamplers(s_ctx, 0, 1, &s_samp_blit);
+    ID3D11DeviceContext_OMSetBlendState(s_ctx, s_blend_sub, NULL, 0xFFFFFFFFu);
+    ID3D11DeviceContext_OMSetDepthStencilState(s_ctx, NULL, 0);
+    if (s_cull_cur > 0 && s_cull_st[0][0]) {
+        ID3D11DeviceContext_RSSetState(s_ctx, s_cull_st[0][0]);
+        s_cull_cur = 0;
+    } else if (s_cull_cur > 0) {
+        ID3D11DeviceContext_RSSetState(s_ctx, s_rs_init);
+        s_cull_cur = -1;
+    }
+    for (i = 0; i < nl; i++) {
+        float pad = 10.0f * scale, ly = y + i * lh;
+        sub_quad(w, h, (w - wid[i]) * 0.5f - pad, ly, (w + wid[i]) * 0.5f + pad, ly + lh,
+                 -1, 0, -1, 0, 0, 0, 0, 0.6f);
+    }
+    for (i = 0; i < nl; i++) {
+        float x = (w - wid[i]) * 0.5f, ly = y + i * lh;
+        for (p = line[i]; p < end[i]; p++) {
+            const SubGlyph *g = &s_sub_glyph[(uint8_t)*p];
+            float s = scale * SUB_SMALL(*p);
+            float top = ly + 31.0f * (scale - s) - 4.0f * scale;
+            if (g->gw)
+                sub_quad(w, h, x - 2 * s, top, x + (g->cw - 2) * s, top + g->ch * s,
+                         (float)g->x / s_font_w, (float)g->y / s_font_h,
+                         (float)(g->x + g->cw) / s_font_w, (float)(g->y + g->ch) / s_font_h,
+                         1.15f, 1.15f, 1.15f, 1);
+            x += g->adv * s;
+        }
+    }
+    ID3D11DeviceContext_PSSetShaderResources(s_ctx, 0, 1, &none);
+    ID3D11DeviceContext_OMSetRenderTargets(s_ctx, 0, NULL, NULL);
+    ID3D11DeviceContext_IASetPrimitiveTopology(s_ctx, D3D11_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
+    s_rebind = 1;
+    s_pipe = -1;
+}
+
 /* The full-size picture to the window without leaving the GPU: copied into
  * one of three textures shared with the presenter's device (keyed mutex: 0
  * free, 1 a frame to show), whose handle goes to fb_present.c. Through the
@@ -2040,6 +2245,15 @@ static void be_flip(void)
         return;
     if (!s_qpf.QuadPart)
         QueryPerformanceFrequency(&s_qpf);
+    {
+        uint32_t shown = ADDR_KEY(xbox_FramebufferWindowPresentedVa());
+        for (i = 0; i < MAX_SURF; i++)
+            if (s_surf[i].tex && s_surf[i].key == shown) {
+                subtitles_draw(&s_surf[i]);
+                s_surf[i].dirty = 1;
+                break;
+            }
+    }
     for (i = 0; i < MAX_SURF; i++) {
         Surf *r = &s_surf[i];
         if (!r->tex)

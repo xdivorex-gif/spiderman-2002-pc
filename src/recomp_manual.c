@@ -361,6 +361,37 @@ void sub_002B0B9B_enter(void)
 void shocker_powers_frame(void);
 void shocker_powers_damage_record(void);
 
+/* The sound layer starting a sound: every play path comes through here with
+ * the instance's 0x38-byte slot. The slot's source is at +8, and a source's name
+ * at +0x38 of it, as sub_002B4420 reads them for its error message. For
+ * subtitles.c. */
+void subtitles_voice(const char *name);
+
+void sub_002B3D00_enter(void)
+{
+    uint32_t slot = GUEST32(g_esp + 4), src;
+    char name[32];
+    int i;
+
+    if (slot < 0x734418u || slot >= 0x734418u + 256u * 0x38u)
+        return;
+    src = GUEST32(slot + 8u);
+    /* A free slot can hold anything: only inside guest RAM, and only a name. */
+    if (src < 0x10000u || src >= 0x03FFFF00u)
+        return;
+    for (i = 0; i < 31; i++) {
+        char c = ((const char *)g_xbox_mem_offset + src + 0x38u)[i];
+        if (!c)
+            break;
+        if (c < 0x20 || c > 0x7E)
+            return;
+        name[i] = c;
+    }
+    name[i] = 0;
+    if (i)
+        subtitles_voice(name);
+}
+
 void sub_00051C00_enter(void)
 {
     shocker_powers_frame();

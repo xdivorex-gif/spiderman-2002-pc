@@ -59,6 +59,7 @@ set(GAME_SOURCES
     src/costume_panel.c     # costume choice, and its panel over the pause menu
     src/shocker_input.c     # the Shocker's blasts on L2 + a face button
     src/shocker_powers.c    # his tornado's pull and damage, in the game
+    src/subtitles.c         # transcribed voice lines and movies, on screen
     src/movie_upscale.c     # movies\NAME.mp4 shown for the Bink of that name
     # Add game-specific sources here, e.g.:
     # src/asset_loader.c

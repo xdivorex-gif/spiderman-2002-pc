@@ -339,6 +339,7 @@ static int s_swallow;                   /* eat the pad until all is released */
 #define BTN_DOWN  0x0002
 #define BTN_A     0x0100
 #define BTN_B     0x0200
+#define BTN_X     0x0400
 #define BTN_Y     0x0800
 #define BTN_L1    0x1000                /* Black: the left shoulder */
 #define BTN_R1    0x2000                /* White: the right shoulder */
@@ -414,6 +415,12 @@ static void filter(int pad, uint8_t *r)
         return;
     }
     if (!s_open) {
+        if (edge & BTN_X) {             /* the pause screen's Subtitles line */
+            extern void subtitles_toggle(void);
+            subtitles_toggle();
+            menu_sound(SND_SCROLL);
+        }
+        r[4 + 2] = 0;                   /* X is that line's while paused */
         if (edge & BTN_Y) {
             read_choice();
             s_sel = s_want_row >= 0 ? s_want_row : worn_row();
@@ -1029,8 +1036,18 @@ void costume_panel_draw(const void **pixels, uint32_t w, uint32_t h, uint32_t *p
         if (s_confirm)
             draw_confirm();
     }
-    if (!s_open)
+    if (!s_open) {
+        extern int subtitles_enabled(void);
+        int u = (int)(h / 480.0 * 16 + 0.5);
+        const wchar_t *mark = ps_prompts() ? L"\x25A1" : L"X";
         draw_hint();
+        if (font_ready()) {
+            game_text(330, 343, 0.62f, RGB(190, 190, 190),
+                      subtitles_enabled() ? "Subtitles: On" : "Subtitles: Off");
+            text(s_font_item, RGB(220, 220, 220), (int)(w * 0.33), (int)(h / 480.0 * 346), u * 2, u * 2,
+                 DT_CENTER | DT_VCENTER, mark);
+        }
+    }
     GdiFlush();
     *pixels = s_bits;
     *pitch = w * 4;
