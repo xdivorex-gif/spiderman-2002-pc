@@ -61,6 +61,7 @@ set(GAME_SOURCES
     src/shocker_powers.c    # his tornado's pull and damage, in the game
     src/subtitles.c         # transcribed voice lines and movies, on screen
     src/movie_upscale.c     # movies\NAME.mp4 shown for the Bink of that name
+    src/movement.c          # earlier run, no dead spot on the left stick
     # Add game-specific sources here, e.g.:
     # src/asset_loader.c
     # src/custom_renderer.c

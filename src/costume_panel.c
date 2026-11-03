@@ -291,6 +291,7 @@ static void inject(uint8_t *r)
 /* ── The panel's input ─────────────────────────────────────────── */
 
 void shocker_input_filter(uint8_t *r);  /* shocker_input.c */
+void movement_stick(uint8_t *r);        /* movement.c */
 
 static volatile int s_open, s_sel, s_paused;
 static volatile int s_confirm, s_confirm_sel;     /* the "are you sure?" prompt: 0 Ok, 1 Cancel */
@@ -405,6 +406,7 @@ static void filter(int pad, uint8_t *r)
         s_confirm = 0;
         s_swallow = 0;
         shocker_input_filter(r);
+        movement_stick(r);
         return;
     }
     if (s_swallow) {

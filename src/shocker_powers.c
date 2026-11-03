@@ -250,6 +250,9 @@ void shocker_powers_frame(void)
     DWORD t = GetTickCount();
     uint32_t world, hero;
     int tornado, blast;
+    extern void movement_frame(void);
+
+    movement_frame();               /* movement.c: the run threshold */
 
     /* RECOMP_TEST_LEVEL=<seconds>,<level>,<hero>,<n>: load that level once,
      * that long after start, for measuring one scene the same way each run. */

@@ -672,7 +672,9 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance,
         movie_upscale_init();   /* movies\<name>.mp4 for the title's Bink */
         {
             extern void subtitles_init(void);
+            extern void movement_init(void);
             subtitles_init();
+            movement_init();    /* earlier run, no dead spot past the dead zone */
         }
     }
 
