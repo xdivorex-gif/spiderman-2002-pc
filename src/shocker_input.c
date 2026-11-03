@@ -30,6 +30,7 @@
 int costume_worn_index(void);
 void shocker_powers_tornado(void);  /* shocker_powers.c: what the moves do */
 void shocker_powers_blast(void);
+int shocker_heat_blocked(void);         /* shocker_heat.c: overheated */
 
 #define SHOCKER_INDEX 8             /* secrets index of shockspidey */
 
@@ -54,14 +55,17 @@ void shocker_powers_blast(void);
 
 /* One or two specials in a row: the second starts `then` ms after the
  * first, once the first animation has let him go. */
-static const struct { int face; uint8_t dpad, dpad2; unsigned then; } s_map[] = {
-    { AN_X, DPAD_UP,   0,          0    },  /* Square:   blast        */
-    { AN_Y, DPAD_RIGHT, 0,         0    },  /* Triangle: dome (a yank
-                                               first kept him busy, and the
-                                               dome never came) */
-    { AN_B, DPAD_DOWN, 0,          0    },  /* Circle:   yank         */
-    { AN_A, DPAD_LEFT, 0,          0    },  /* Cross:    gloves       */
+static const struct { int face; uint8_t dpad, dpad2; unsigned then; double heat; } s_map[] = {
+    { AN_X, DPAD_UP,   0,          0, 0.30 },  /* Square:   blast        */
+    { AN_Y, DPAD_RIGHT, 0,         0, 0.45 },  /* Triangle: dome (a yank
+                                                  first kept him busy, and
+                                                  the dome never came) */
+    { AN_B, DPAD_DOWN, 0,          0, 0.22 },  /* Circle:   yank         */
+    { AN_A, DPAD_LEFT, 0,          0, 0.25 },  /* Cross:    gloves       */
 };
+/* The last field: the heat a special adds to his gauntlets, of full. Kept
+ * beside its press for reading; shocker_heat.c adds it when the special's
+ * sound plays. Overheated, a press does nothing until they cool. */
 
 static int s_lt_down, s_used, s_prev_face[4];
 static DWORD s_lt_t0, s_macro_t0, s_pulse_t0;
@@ -129,7 +133,9 @@ void shocker_input_filter(uint8_t *r)
         r[4 + AN_LT] = 0;
         for (k = 0; k < 4; k++) {
             int f = s_map[k].face, now = HELD(r, f);
-            if (now && !s_prev_face[k] && s_macro < 0) {
+            if (now && !s_prev_face[k] && s_macro < 0 && shocker_heat_blocked()) {
+                s_used = 1;                 /* overheated: nothing fires */
+            } else if (now && !s_prev_face[k] && s_macro < 0) {
                 s_macro = k;
                 s_macro_t0 = t;
                 s_used = 1;
@@ -143,6 +149,22 @@ void shocker_input_filter(uint8_t *r)
         }
     } else {
         memset(s_prev_face, 0, sizeof s_prev_face);
+    }
+
+    /* The same specials pressed the game's way, the web button with a d-pad
+     * direction held: overheated, that press of the web button is kept from
+     * the game until it is let go. (Heat itself comes from the specials'
+     * sounds, shocker_heat.c, so only one the game performs costs any.) */
+    if (s_macro < 0 && !s_lt_down) {
+        static int prev_y, blocked;
+        int y = HELD(r, AN_Y), dp = r[2] & 0x0F;
+        if (y && !prev_y && dp && shocker_heat_blocked())
+            blocked = 1;
+        if (!y)
+            blocked = 0;
+        if (blocked)
+            r[4 + AN_Y] = 0;
+        prev_y = y;
     }
 
     if (s_macro >= 0) {

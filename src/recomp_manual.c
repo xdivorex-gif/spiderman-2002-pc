@@ -366,6 +366,7 @@ void shocker_powers_damage_record(void);
  * at +0x38 of it, as sub_002B4420 reads them for its error message. For
  * subtitles.c. */
 void subtitles_voice(const char *name);
+void shocker_heat_sound(const char *name, uint32_t slot);
 
 void sub_002B3D00_enter(void)
 {
@@ -388,8 +389,10 @@ void sub_002B3D00_enter(void)
         name[i] = c;
     }
     name[i] = 0;
-    if (i)
+    if (i) {
         subtitles_voice(name);
+        shocker_heat_sound(name, slot); /* shocker_heat.c: his specials' sounds */
+    }
 }
 
 void sub_00051C00_enter(void)

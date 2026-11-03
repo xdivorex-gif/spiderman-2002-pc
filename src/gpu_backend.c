@@ -301,6 +301,14 @@ extern const uint32_t *movie_upscale_texture(uint32_t *w, uint32_t *h);   /* mov
 extern void subtitles_movie_frame(void);                 /* subtitles.c */
 extern int subtitles_in_movie(void);
 extern const char *subtitles_text(void);
+extern int costume_worn_index(void);           /* costume_panel.c */
+extern float shocker_heat(int *over);          /* shocker_heat.c */
+
+/* The Shocker worn: his HUD art (<hash>_shocker.png) and heat gauge. */
+static int shocker_worn(void)
+{
+    return costume_worn_index() == 8;
+}
 
 static void render_size_init(void)
 {
@@ -361,6 +369,7 @@ typedef struct {
     uint32_t key, w, h, color, pitch, levels, sum;
     uint32_t tw, th;            /* the D3D texture's size: w x h, or a pack image's */
     int hud;                    /* one of the HUD's (texpack\hud.txt) */
+    int shocker;                /* a HUD one, uploaded while he was worn */
     uint32_t hash;              /* its texels hash (RECOMP_HUD_LOG) */
     ID3D11Texture2D          *tex;
     ID3D11ShaderResourceView *srv;
@@ -848,6 +857,8 @@ static Surf *bind_target(const Nv2aSurface *s, const Nv2aRenderState *rs, Zbuf *
  * 256 bytes. 64 samples there fell on two pixel columns, and a dark movie
  * frame that differed only elsewhere went unseen -- origin1.bik stayed on
  * one frame (black, in a fade) for up to 51 frames. */
+static volatile LONG s_total_flips;
+
 static uint32_t tex_sum(const Nv2aTexture *t, uint32_t n)
 {
     const uint8_t *p = GUEST(t->offset);
@@ -855,9 +866,33 @@ static uint32_t tex_sum(const Nv2aTexture *t, uint32_t n)
 
     if (n < 4)
         return 0;
-    if (!d3d8_format_is_swizzled(t->color) && !d3d8_format_dxt_block_bytes(t->color))
-        step = 256;
-    else
+    if (!d3d8_format_is_swizzled(t->color) && !d3d8_format_dxt_block_bytes(t->color)) {
+        /* Linear: the Bink frame, rewritten in place. Bink redraws only the
+         * blocks that change, and a dark scene changes few of them: a sample
+         * every 256 bytes (most of each 16-pixel block row unread) missed
+         * whole stretches of Heist, which stayed on its first dark frame.
+         * Every word is read, once a flip (~1 ms for 640x480). */
+        static struct { uint32_t off, n, sum; LONG flip; } memo[4];
+        LONG flip = s_total_flips;
+        int k, old = 0;
+        for (k = 0; k < 4; k++) {
+            if (memo[k].off == t->offset && memo[k].n == n && memo[k].flip == flip)
+                return memo[k].sum;
+            if (memo[k].flip < memo[old].flip)
+                old = k;
+        }
+        {
+            const uint32_t *w = (const uint32_t *)p;
+            uint32_t a = 0, b = 0, nw = n / 4;
+            for (i = 0; i + 1 < nw; i += 2) {
+                a = (a ^ w[i]) * 16777619u;
+                b = (b ^ w[i + 1]) * 2246822519u;
+            }
+            sum ^= a ^ (b << 1 | b >> 31) ^ *(const uint32_t *)(p + n - 4);
+        }
+        memo[old].off = t->offset; memo[old].n = n; memo[old].sum = sum; memo[old].flip = flip;
+        return sum;
+    } else
         step = n / 64 > 4 ? (n / 64) & ~3u : 4;
     for (i = 0; i + 4 <= n; i += step)
         sum = (sum ^ *(const uint32_t *)(p + i)) * 16777619u;
@@ -982,13 +1017,17 @@ static void texture_replace(const Nv2aTexture *t, uint32_t *px, uint32_t hash)
  * texels hash to <hash> (8 hex digits, as RECOMP_GPU_TEXDUMP names its
  * dumps), at the image's own size: upscaled menu art and fonts. With
  * PlayStation prompts <hash>_ps5.png or <hash>_ps4.png is used before
- * <hash>.png, and never otherwise (the upscaled button strip). Texture
+ * <hash>.png, and never otherwise (the upscaled button strip); while the
+ * Shocker is worn <hash>_shocker.png is used before either (his HUD,
+ * tools/shocker_hud.ps1), and HUD textures are made again when he is put
+ * on or taken off. Texture
  * coordinates are normalised in both pipelines, so a larger image needs
  * nothing else. Images are read with WIC on first use and kept.
  * RECOMP_TEXPACK=0 turns packs off. */
 typedef struct {
     uint32_t hash, w, h;
     int ps;                     /* <hash>_ps5 / _ps4: 5 / 4, else 0 */
+    int shocker;                /* <hash>_shocker */
     uint32_t *px;               /* BGRA, loaded on first use */
     int failed;
     char path[MAX_PATH];
@@ -1030,6 +1069,8 @@ static void pack_scan(void)
             s_pack[s_npack].ps = 5;
         else if (!_strnicmp(fd.cFileName + 8, "_ps4.", 5))
             s_pack[s_npack].ps = 4;
+        else if (!_strnicmp(fd.cFileName + 8, "_shocker.", 9))
+            s_pack[s_npack].shocker = 1;
         _snprintf(s_pack[s_npack].path, MAX_PATH, "%s%s", dir, fd.cFileName);
         s_npack++;
     } while (FindNextFileA(h, &fd));
@@ -1078,16 +1119,19 @@ static uint32_t *wic_load(const char *path, uint32_t *w, uint32_t *h)
     return px;
 }
 
-static const PackImg *pack_find(uint32_t hash)
+static const PackImg *pack_find(uint32_t hash, int shocker)
 {
     int i, pass, ps = prompts_ps();
     if (s_npack < 0)
         pack_scan();
-    /* The image for these prompts first, then a plain one. */
-    for (pass = ps ? 0 : 1; pass < 2; pass++)
+    /* His image while he is worn, then the image for these prompts, then a
+     * plain one. */
+    for (pass = shocker ? -1 : ps ? 0 : 1; pass < 2; pass++)
     for (i = 0; i < s_npack; i++) {
         PackImg *p = &s_pack[i];
-        if (p->hash != hash || p->failed || p->ps != (pass == 0 ? ps : 0))
+        if (p->hash != hash || p->failed)
+            continue;
+        if (pass < 0 ? !p->shocker : p->shocker || p->ps != (pass == 0 ? ps : 0))
             continue;
         if (!p->px && !(p->px = wic_load(p->path, &p->w, &p->h))) {
             fprintf(stderr, "  [GPU-BE] texture pack: could not read %s\n", p->path);
@@ -1137,14 +1181,15 @@ static int hud_texture(uint32_t hash)
  * image to upload instead, or NULL; *hud whether it is one of the HUD's. */
 static uint32_t s_srv_hash;     /* texture_srv's last texels hash */
 
-static const PackImg *texture_decoded(const Nv2aTexture *t, uint32_t *px, int *hud)
+static const PackImg *texture_decoded(const Nv2aTexture *t, uint32_t *px, int *hud, int *shocker)
 {
     uint32_t hash = texels_hash(px, (size_t)t->width * t->height);
     s_srv_hash = hash;
     texture_dump(t, px, hash);
     texture_replace(t, px, hash);
     *hud = hud_texture(hash);
-    return pack_find(hash);
+    *shocker = *hud && shocker_worn();
+    return pack_find(hash, *shocker);
 }
 
 static int s_srv_hud;           /* texture_srv's last: a HUD texture */
@@ -1155,7 +1200,7 @@ static ID3D11ShaderResourceView *texture_srv(const Nv2aTexture *t)
     Tex *hit = NULL, *victim = NULL;
     const PackImg *pack;
     const uint32_t *up;
-    int i, mips, hud;
+    int i, mips, hud, shocker;
 
     s_srv_hud = 0;
     s_srv_hash = 0;
@@ -1176,7 +1221,8 @@ static ID3D11ShaderResourceView *texture_srv(const Nv2aTexture *t)
                 && e->color == t->color && e->pitch == t->pitch)
             hit = e;
     }
-    if (hit && hit->sum == sum) {
+    /* A HUD texture made for the other suit is made again. */
+    if (hit && hit->sum == sum && !(hit->hud && hit->shocker != shocker_worn())) {
         hit->used = ++s_tick;
         s_srv_hud = hit->hud;
         s_srv_hash = hit->hash;
@@ -1190,7 +1236,7 @@ static ID3D11ShaderResourceView *texture_srv(const Nv2aTexture *t)
     }
     if (!nv2a_backend_decode_texture(t, s_decode))
         return NULL;
-    pack = texture_decoded(t, s_decode, &hud);
+    pack = texture_decoded(t, s_decode, &hud, &shocker);
     s_srv_hud = hud;
     up = pack ? pack->px : s_decode;
     uw = pack ? pack->w : t->width;
@@ -1218,6 +1264,7 @@ static ID3D11ShaderResourceView *texture_srv(const Nv2aTexture *t)
             ID3D11DeviceContext_GenerateMips(s_ctx, hit->srv);
         hit->sum = sum;
         hit->hud = hud;
+        hit->shocker = shocker;
         hit->hash = s_srv_hash;
         hit->used = ++s_tick;
         return hit->srv;
@@ -1266,6 +1313,7 @@ static ID3D11ShaderResourceView *texture_srv(const Nv2aTexture *t)
     victim->levels = mips ? 2 : 1;
     victim->sum = sum;
     victim->hud = hud;
+    victim->shocker = shocker;
     victim->hash = s_srv_hash;
     victim->used = ++s_tick;
     return victim->srv;
@@ -1556,10 +1604,54 @@ typedef struct { float x0, x1, y0, y1; } HudBox;
 static HudBox s_hud_box[2][16];
 static int s_hud_nbox[2], s_hud_cur;
 
+/* Where e_healthbar_2_rows was last drawn (guest pixels, after the widescreen
+ * narrowing) and the part of it shown (u, v 0..1): the Shocker's heat gauge
+ * is drawn into its lower slot. */
+#define HASH_BAR2 0x435057E8u
+static struct { float x0, x1, y0, y1, u0, u1, v0, v1; unsigned flip; } s_bar;
+static unsigned s_hud_flips;
+
 static void hud_boxes_flip(void)
 {
     s_hud_cur ^= 1;
     s_hud_nbox[s_hud_cur] = 0;
+    s_hud_flips++;
+}
+
+static void bar_note(const Nv2aVertex *v, UINT n, float f, float w)
+{
+    float x0 = 1e9f, x1 = -1e9f, y0 = 1e9f, y1 = -1e9f, u0 = 1e9f, u1 = -1e9f, v0 = 1e9f, v1 = -1e9f;
+    UINT i;
+    for (i = 0; i < n; i++) {
+        float x = v[i].x;
+        if (f > 0.0f)
+            x = v[i].x / f;             /* the left-pinned transform below */
+        if (x < x0) x0 = x;
+        if (x > x1) x1 = x;
+        if (v[i].y < y0) y0 = v[i].y;
+        if (v[i].y > y1) y1 = v[i].y;
+        if (v[i].u < u0) u0 = v[i].u;
+        if (v[i].u > u1) u1 = v[i].u;
+        if (v[i].v < v0) v0 = v[i].v;
+        if (v[i].v > v1) v1 = v[i].v;
+    }
+    (void)w;
+    if (u1 > 1.5f) {                    /* texels of the 256x64 original */
+        u0 /= 256.0f; u1 /= 256.0f; v0 /= 64.0f; v1 /= 64.0f;
+    }
+    /* The frame itself, the whole texture: the bar's fills are drawn with it
+     * too, over parts of it, and their texture coordinates are another
+     * stage's. */
+    if (x1 - x0 < 4.0f || y1 - y0 < 2.0f || u1 - u0 < 0.9f || v1 - v0 < 0.9f)
+        return;
+    /* the largest in a frame: a fill can map the whole texture onto its
+     * strip as well */
+    if (s_bar.flip == s_hud_flips
+            && (x1 - x0) * (y1 - y0) < (s_bar.x1 - s_bar.x0) * (s_bar.y1 - s_bar.y0))
+        return;
+    s_bar.x0 = x0; s_bar.x1 = x1; s_bar.y0 = y0; s_bar.y1 = y1;
+    s_bar.u0 = u0; s_bar.u1 = u1; s_bar.v0 = v0; s_bar.v1 = v1;
+    s_bar.flip = s_hud_flips;
 }
 
 static int hud_widescreen(const Nv2aSurface *s, const Nv2aRenderState *rs, int hud,
@@ -1574,6 +1666,37 @@ static int hud_widescreen(const Nv2aSurface *s, const Nv2aRenderState *rs, int h
         f = e && *e ? (float)atof(e) : 0.0f;
         if (f <= 1.0f || f > 4.0f)
             f = 0.0f;
+    }
+    /* While the Shocker is worn: each HUD texture once, where it is drawn. */
+    if (hud && n) {
+        static uint32_t seen[64];
+        static int nseen;
+        int k, all2 = 1;
+        float xa = 1e9f, xb = -1e9f, ya = 1e9f, yb = -1e9f;
+        for (k = 0; k < nseen && seen[k] != s_srv_hash; k++)
+            ;
+        if (k == nseen && nseen < 64 && shocker_worn()) {
+            seen[nseen++] = s_srv_hash;
+            for (i = 0; i < n; i++) {
+                if (v[i].rhw != 1.0f) all2 = 0;
+                if (v[i].x < xa) xa = v[i].x;
+                if (v[i].x > xb) xb = v[i].x;
+                if (v[i].y < ya) ya = v[i].y;
+                if (v[i].y > yb) yb = v[i].y;
+            }
+            fprintf(stderr, "  [HEAT] hud texture %08X on %ux%u: n %u x %.0f..%.0f y %.0f..%.0f uv %.2f,%.2f..%.2f,%.2f 2d %d\n",
+                    s_srv_hash, s->width, s->height, n, xa, xb, ya, yb,
+                    v[0].u, v[0].v, v[n - 1].u, v[n - 1].v, all2);
+        }
+    }
+    if (hud && s_srv_hash == HASH_BAR2 && s->width == 640 && s->height == 480 && n) {
+        /* the bar sits in the left third, so it takes the left-pinned
+         * transform when narrowed */
+        int all2d = 1;
+        for (i = 0; i < n; i++)
+            if (v[i].rhw != 1.0f) all2d = 0;
+        if (all2d)
+            bar_note(v, n, f > 1.0f ? f : 0.0f, w);
     }
     if (f == 0.0f || s->width != 640 || s->height != 480 || !n || !rs)
         return 0;
@@ -1698,12 +1821,15 @@ static void be_draw_inner(const Nv2aSurface *s, const Nv2aBatch *b)
         ID3D11SamplerState *sss[4] = { NULL, NULL, NULL, NULL };
         RcConsts q;
         int st, i;
+        uint32_t hud_hash = 0;
 
         memset(&q, 0, sizeof q);
         for (st = 0; st < 4; st++) {
             if (!b->stage[st])
                 continue;
             srvs[st] = texture_srv(b->stage[st]);
+            if (s_srv_hud && !hud)
+                hud_hash = s_srv_hash;  /* the HUD's own, not a later stage's */
             hud |= s_srv_hud;
             if (srvs[st] == r->srv)
                 srvs[st] = NULL;
@@ -1712,6 +1838,8 @@ static void be_draw_inner(const Nv2aSurface *s, const Nv2aBatch *b)
                 q.misc[1] |= 1u << st;
             }
         }
+        if (hud)
+            s_srv_hash = hud_hash;
         ID3D11DeviceContext_PSSetShaderResources(s_ctx, 0, 4, srvs);
         ID3D11DeviceContext_PSSetSamplers(s_ctx, 0, 4, sss);
         for (i = 0; i < 8; i++) {
@@ -1961,13 +2089,14 @@ static void sub_quad(float w, float h, float x0, float y0, float x1, float y1,
 
 /* The line drawn into r, wrapped, centred, on a dark bar: at the frame's foot
  * in a movie (its letterbox), above the compass in play. */
+static void sub_setup(Surf *r);
+static void sub_done(void);
+
 static void subtitles_draw(Surf *r)
 {
     const char *text = subtitles_text();
     const char *line[4], *end[4], *p;
     float w = (float)r->rw, h = (float)r->rh, scale, maxw, lh, y, wid[4];
-    ID3D11ShaderResourceView *none = NULL;
-    D3D11_VIEWPORT vp;
     int nl = 0, i;
 
     if (!text || !*text || !subtitles_gpu_init())
@@ -1999,6 +2128,136 @@ static void subtitles_draw(Surf *r)
     }
     y = (subtitles_in_movie() ? h * 0.97f : h * 0.78f) - nl * lh;
 
+    sub_setup(r);
+    for (i = 0; i < nl; i++) {
+        float pad = 10.0f * scale, ly = y + i * lh;
+        sub_quad(w, h, (w - wid[i]) * 0.5f - pad, ly, (w + wid[i]) * 0.5f + pad, ly + lh,
+                 -1, 0, -1, 0, 0, 0, 0, 0.6f);
+    }
+    for (i = 0; i < nl; i++) {
+        float x = (w - wid[i]) * 0.5f, ly = y + i * lh;
+        for (p = line[i]; p < end[i]; p++) {
+            const SubGlyph *g = &s_sub_glyph[(uint8_t)*p];
+            float s = scale * SUB_SMALL(*p);
+            float top = ly + 31.0f * (scale - s) - 4.0f * scale;
+            if (g->gw)
+                sub_quad(w, h, x - 2 * s, top, x + (g->cw - 2) * s, top + g->ch * s,
+                         (float)g->x / s_font_w, (float)g->y / s_font_h,
+                         (float)(g->x + g->cw) / s_font_w, (float)(g->y + g->ch) / s_font_h,
+                         1.15f, 1.15f, 1.15f, 1);
+            x += g->adv * s;
+        }
+    }
+    sub_done();
+}
+
+/* The Shocker's heat, in the slot of e_healthbar_2_rows that showed web
+ * fluid (x 282..520, y 177..197 of its 1024x256 pack image), where his
+ * gauntlet is drawn round it: cells lit from the wrist, gold to red, all of
+ * them pulsing red while he is overheated. Black first, over the game's own
+ * web fill. */
+static void heat_draw(Surf *r)
+{
+    const float sx0 = 282.0f / 1024, sx1 = 520.0f / 1024, sy0 = 177.0f / 256, sy1 = 197.0f / 256;
+    float w = (float)r->rw, h = (float)r->rh, kx = w / 640.0f, ky = h / 480.0f;
+    float bx, bw, by, bh, x0, x1, y0, y1, heat, pulse;
+    int over, cells = 16, lit, i;
+
+    if (!shocker_worn() || subtitles_in_movie() || !subtitles_gpu_init())
+        return;
+    if (!s_bar.flip || s_hud_flips - s_bar.flip > 2) {
+        static unsigned last;
+        if (s_hud_flips - last > 600) {         /* every ten seconds or so */
+            fprintf(stderr, "  [HEAT] no health bar drawn (bar seen %s)\n", s_bar.flip ? "before" : "never");
+            last = s_hud_flips;
+        }
+        return;
+    }
+    bx = s_bar.x0; bw = s_bar.x1 - s_bar.x0;
+    by = s_bar.y0; bh = s_bar.y1 - s_bar.y0;
+    /* the slot, from the texture's 0..1 to where the bar was drawn */
+    x0 = (bx + (sx0 - s_bar.u0) / (s_bar.u1 - s_bar.u0) * bw) * kx;
+    x1 = (bx + (sx1 - s_bar.u0) / (s_bar.u1 - s_bar.u0) * bw) * kx;
+    y0 = (by + (sy0 - s_bar.v0) / (s_bar.v1 - s_bar.v0) * bh) * ky;
+    y1 = (by + (sy1 - s_bar.v0) / (s_bar.v1 - s_bar.v0) * bh) * ky;
+    if (x1 <= x0 || y1 <= y0 || x0 < 0 || y0 < 0 || x1 > w || y1 > h)
+        return;
+    heat = shocker_heat(&over);
+    lit = (int)(heat * cells + 0.999f);
+    pulse = over ? 0.55f + 0.45f * (float)sin((double)GetTickCount64() * 0.012) : 1.0f;
+    {
+        static int logged = -1;
+        int now = over ? 100 : (int)(heat * 10.0f);
+        if (now != logged) {
+            fprintf(stderr, "  [HEAT] %.2f%s, slot x %.0f..%.0f y %.0f..%.0f of %.0fx%.0f; bar x %.1f..%.1f y %.1f..%.1f u %.3f..%.3f v %.3f..%.3f\n",
+                    heat, over ? " overheated" : "", x0, x1, y0, y1, w, h,
+                    s_bar.x0, s_bar.x1, s_bar.y0, s_bar.y1, s_bar.u0, s_bar.u1, s_bar.v0, s_bar.v1);
+            logged = now;
+        }
+    }
+
+    sub_setup(r);
+    /* The gauntlet red-hot (texpack\shocker_heat.png, over the whole bar),
+     * coming in from a third of full heat, pulsing once overheated. */
+    {
+        static ID3D11ShaderResourceView *hot;
+        static int tried;
+        float a = over ? 0.6f + 0.4f * pulse : (heat - 0.3f) / 0.7f;
+        if (!tried) {
+            char path[MAX_PATH], *slash;
+            uint32_t hw, hh, *px;
+            tried = 1;
+            GetModuleFileNameA(NULL, path, sizeof path);
+            if ((slash = strrchr(path, '\\')) != NULL)
+                strcpy(slash + 1, "texpack\\shocker_heat.png");
+            if ((px = wic_load(path, &hw, &hh)) != NULL) {
+                D3D11_TEXTURE2D_DESC td;
+                D3D11_SUBRESOURCE_DATA sr;
+                ID3D11Texture2D *tex = NULL;
+                memset(&td, 0, sizeof td);
+                td.Width = hw; td.Height = hh; td.MipLevels = 1; td.ArraySize = 1;
+                td.Format = DXGI_FORMAT_B8G8R8A8_UNORM; td.SampleDesc.Count = 1;
+                td.Usage = D3D11_USAGE_IMMUTABLE; td.BindFlags = D3D11_BIND_SHADER_RESOURCE;
+                sr.pSysMem = px; sr.SysMemPitch = hw * 4; sr.SysMemSlicePitch = 0;
+                if (SUCCEEDED(ID3D11Device_CreateTexture2D(s_dev, &td, &sr, &tex))) {
+                    ID3D11Device_CreateShaderResourceView(s_dev, (ID3D11Resource *)tex, NULL, &hot);
+                    ID3D11Texture2D_Release(tex);
+                }
+                free(px);
+            }
+        }
+        if (hot && a > 0.0f) {
+            ID3D11DeviceContext_PSSetShaderResources(s_ctx, 0, 1, &hot);
+            sub_quad(w, h, s_bar.x0 * kx, s_bar.y0 * ky, s_bar.x1 * kx, s_bar.y1 * ky,
+                     s_bar.u0, s_bar.v0, s_bar.u1, s_bar.v1, 1, 1, 1, a > 1.0f ? 1.0f : a);
+            ID3D11DeviceContext_PSSetShaderResources(s_ctx, 0, 1, &s_font_srv);
+        }
+    }
+    /* black over the whole slot, a little past the cells: the web fill's
+     * slanted end reaches x 530 */
+    sub_quad(w, h, x0 - (x1 - x0) * 0.05f, y0 - (y1 - y0) * 0.05f, x1 + (x1 - x0) * 0.05f,
+             y1 + (y1 - y0) * 0.05f, -1, 0, -1, 0, 0.02f, 0.01f, 0.0f, 1.0f);
+    for (i = 0; i < lit && i < cells; i++) {
+        float t = (float)i / (cells - 1), cw = (x1 - x0) / cells;
+        float cr, cg, cb, gap = cw * 0.18f, pad = (y1 - y0) * 0.14f;
+        if (over) {
+            cr = 1.0f; cg = 0.12f; cb = 0.05f;
+        } else if (t < 0.5f) {          /* gold to orange */
+            cr = 1.0f; cg = 0.82f - t * 0.70f; cb = 0.15f - t * 0.2f;
+        } else {                        /* orange to red */
+            cr = 1.0f - (t - 0.5f) * 0.1f; cg = 0.47f - (t - 0.5f) * 0.74f; cb = 0.05f;
+        }
+        sub_quad(w, h, x0 + i * cw + gap * 0.5f, y0 + pad, x0 + (i + 1) * cw - gap * 0.5f, y1 - pad,
+                 -1, 0, -1, 0, cr, cg, cb, pulse);
+    }
+    sub_done();
+}
+
+static void sub_setup(Surf *r)
+{
+    float w = (float)r->rw, h = (float)r->rh;
+    D3D11_VIEWPORT vp;
+
     ID3D11DeviceContext_OMSetRenderTargets(s_ctx, 1, &r->rtv, NULL);
     memset(&vp, 0, sizeof vp);
     vp.Width = w; vp.Height = h; vp.MaxDepth = 1.0f;
@@ -2020,25 +2279,12 @@ static void subtitles_draw(Surf *r)
         ID3D11DeviceContext_RSSetState(s_ctx, s_rs_init);
         s_cull_cur = -1;
     }
-    for (i = 0; i < nl; i++) {
-        float pad = 10.0f * scale, ly = y + i * lh;
-        sub_quad(w, h, (w - wid[i]) * 0.5f - pad, ly, (w + wid[i]) * 0.5f + pad, ly + lh,
-                 -1, 0, -1, 0, 0, 0, 0, 0.6f);
-    }
-    for (i = 0; i < nl; i++) {
-        float x = (w - wid[i]) * 0.5f, ly = y + i * lh;
-        for (p = line[i]; p < end[i]; p++) {
-            const SubGlyph *g = &s_sub_glyph[(uint8_t)*p];
-            float s = scale * SUB_SMALL(*p);
-            float top = ly + 31.0f * (scale - s) - 4.0f * scale;
-            if (g->gw)
-                sub_quad(w, h, x - 2 * s, top, x + (g->cw - 2) * s, top + g->ch * s,
-                         (float)g->x / s_font_w, (float)g->y / s_font_h,
-                         (float)(g->x + g->cw) / s_font_w, (float)(g->y + g->ch) / s_font_h,
-                         1.15f, 1.15f, 1.15f, 1);
-            x += g->adv * s;
-        }
-    }
+}
+
+static void sub_done(void)
+{
+    ID3D11ShaderResourceView *none = NULL;
+
     ID3D11DeviceContext_PSSetShaderResources(s_ctx, 0, 1, &none);
     ID3D11DeviceContext_OMSetRenderTargets(s_ctx, 0, NULL, NULL);
     ID3D11DeviceContext_IASetPrimitiveTopology(s_ctx, D3D11_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
@@ -2249,6 +2495,7 @@ static void be_flip(void)
         uint32_t shown = ADDR_KEY(xbox_FramebufferWindowPresentedVa());
         for (i = 0; i < MAX_SURF; i++)
             if (s_surf[i].tex && s_surf[i].key == shown) {
+                heat_draw(&s_surf[i]);
                 subtitles_draw(&s_surf[i]);
                 s_surf[i].dirty = 1;
                 break;

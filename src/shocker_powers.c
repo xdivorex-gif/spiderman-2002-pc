@@ -251,8 +251,10 @@ void shocker_powers_frame(void)
     uint32_t world, hero;
     int tornado, blast;
     extern void movement_frame(void);
+    extern void shocker_heat_frame(void);
 
     movement_frame();               /* movement.c: the run threshold */
+    shocker_heat_frame();           /* shocker_heat.c: his webbing never runs out */
 
     /* RECOMP_TEST_LEVEL=<seconds>,<level>,<hero>,<n>: load that level once,
      * that long after start, for measuring one scene the same way each run. */
