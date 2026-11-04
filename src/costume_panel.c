@@ -396,9 +396,37 @@ enum { PAGE_TOP, PAGE_OPTIONS, PAGE_OTHER };
 #define SUB_ROW_GAP   17.0f             /* label to its value */
 #define SUB_ROW_SIZE  0.51f             /* an unfocused row's */
 #define SUB_MARK_X    0.365
+#define SUB_COL_L     236.0f            /* the row's halves: Subtitles, Difficulty */
+#define SUB_COL_R     408.0f
 #define PAUSE_LINES   5                 /* Audio, Restart, Options, Combat, Exit */
 #define PAUSE_OPTIONS 2
 static volatile int s_page, s_pause_cur;
+
+/* Difficulty: options + 0x14B0, a 16-bit 0..2 (the menu's Select Difficulty:
+ * Easy, Medium, Hard), read by the level scripts through the DIFFICULTY
+ * setting. Changed on the top pause page with the shoulders, it is stored
+ * at once and takes hold when the level next starts. */
+#define SM_PROFILE_DIFFICULTY 0x14B0u
+#define DIFFICULTY_LEVELS     3
+static const char *const s_difficulty_name[DIFFICULTY_LEVELS] = { "Easy", "Medium", "Hard" };
+
+static int difficulty_get(void)
+{
+    uint32_t p = profile_of(app_object());
+    int d;
+    if (!p)
+        return -1;
+    d = *(volatile int16_t *)((uint8_t *)g_xbox_mem_offset + p + SM_PROFILE_DIFFICULTY);
+    return d >= 0 && d < DIFFICULTY_LEVELS ? d : -1;
+}
+
+static void difficulty_set(int d)
+{
+    uint32_t p = profile_of(app_object());
+    if (p)
+        *(volatile int16_t *)((uint8_t *)g_xbox_mem_offset + p + SM_PROFILE_DIFFICULTY) = (int16_t)d;
+    fprintf(stderr, "  [DIFFICULTY] %s, from the next level start\n", s_difficulty_name[d]);
+}
 
 static void pause_track(unsigned edge)
 {
@@ -460,6 +488,15 @@ static void filter(int pad, uint8_t *r)
             menu_sound(SND_SCROLL);
         }
         r[4 + 2] = 0;                   /* X is that row's while paused */
+        if (s_page == PAGE_OPTIONS && (edge & (BTN_L1 | BTN_R1))) {   /* Options' Difficulty */
+            int d = difficulty_get();
+            if (d >= 0) {
+                d = (d + (edge & BTN_R1 ? 1 : DIFFICULTY_LEVELS - 1)) % DIFFICULTY_LEVELS;
+                difficulty_set(d);
+                menu_sound(SND_SCROLL);
+            }
+        }
+        r[4 + 4] = r[4 + 5] = 0;        /* the shoulders are that row's while paused */
         if (edge & BTN_Y) {
             read_choice();
             s_sel = s_want_row >= 0 ? s_want_row : worn_row();
@@ -1056,6 +1093,21 @@ static void button_icon(int cx, int cy, int r, int ps)
     DeleteObject(pen);
 }
 
+/* A shoulder button: a light rounded box, its name inside. */
+static void shoulder_icon(int cx, int cy, int r, const wchar_t *name)
+{
+    HPEN pen = CreatePen(PS_SOLID, r / 5 > 1 ? r / 5 : 1, RGB(215, 215, 215)), old;
+    HBRUSH oldb = (HBRUSH)SelectObject(s_dc, GetStockObject(HOLLOW_BRUSH));
+    int hw = r * 3 / 2;
+
+    old = (HPEN)SelectObject(s_dc, pen);
+    RoundRect(s_dc, cx - hw, cy - r, cx + hw + 1, cy + r + 1, r, r);
+    SelectObject(s_dc, oldb);
+    SelectObject(s_dc, old);
+    DeleteObject(pen);
+    text(s_font_small, RGB(215, 215, 215), cx - hw, cy - r, hw * 2, r * 2, DT_CENTER | DT_VCENTER | DT_SINGLELINE, name);
+}
+
 static void draw_confirm(void)
 {
     /* Up to ~20% dimmer and back, about once a second, on the selected line. */
@@ -1112,19 +1164,32 @@ void costume_panel_draw(const void **pixels, uint32_t w, uint32_t h, uint32_t *p
         const wchar_t *mark = ps_prompts() ? L"\x25A1" : L"X";
         draw_hint();
         if (s_page == PAGE_OPTIONS && font_ready()) {
-            /* the fourth row, under Camera Mode, as the game draws its rows:
-             * the label, its value under it, grey */
+            /* the fourth row, under Camera Mode, as the game draws its rows
+             * (label, its value under it, grey), in two halves: Subtitles,
+             * the square beside it; Difficulty, its level between the
+             * shoulder buttons that change it */
+            int d = difficulty_get(), ps = ps_prompts();
             s_text_grey = 1;
             s_text_wide = 1.3f;
             s_text_track = 1.6f;
-            game_text(SUB_ROW_X, SUB_ROW_Y, SUB_ROW_SIZE, RGB(168, 168, 168), "Subtitles");
-            game_text(SUB_ROW_X, SUB_ROW_Y + SUB_ROW_GAP, SUB_ROW_SIZE, RGB(168, 168, 168),
+            game_text(SUB_COL_L, SUB_ROW_Y, SUB_ROW_SIZE, RGB(168, 168, 168), "Subtitles");
+            game_text(SUB_COL_L, SUB_ROW_Y + SUB_ROW_GAP, SUB_ROW_SIZE, RGB(168, 168, 168),
                       subtitles_enabled() ? "On" : "Off");
+            if (d >= 0) {
+                game_text(SUB_COL_R, SUB_ROW_Y, SUB_ROW_SIZE, RGB(168, 168, 168), "Difficulty");
+                game_text(SUB_COL_R, SUB_ROW_Y + SUB_ROW_GAP, SUB_ROW_SIZE, RGB(168, 168, 168),
+                          s_difficulty_name[d]);
+            }
             s_text_grey = 0;
             s_text_wide = 1.0f;
             s_text_track = 0;
-            button_icon((int)(w * SUB_MARK_X), (int)(h / 480.0 * (SUB_ROW_Y + SUB_ROW_GAP * 0.5f + 6)),
-                        (int)(h / 480.0 * 9.5f), ps_prompts());
+            button_icon((int)(w / 640.0 * (SUB_COL_L - 80)), (int)(h / 480.0 * (SUB_ROW_Y + SUB_ROW_GAP * 0.5f + 6)),
+                        (int)(h / 480.0 * 9.5f), ps);
+            if (d >= 0) {
+                int cy = (int)(h / 480.0 * (SUB_ROW_Y + SUB_ROW_GAP + 7));
+                shoulder_icon((int)(w / 640.0 * (SUB_COL_R - 44)), cy, (int)(h / 480.0 * 7), ps ? L"L1" : L"LB");
+                shoulder_icon((int)(w / 640.0 * (SUB_COL_R + 44)), cy, (int)(h / 480.0 * 7), ps ? L"R1" : L"RB");
+            }
             (void)mark;
         }
     }
