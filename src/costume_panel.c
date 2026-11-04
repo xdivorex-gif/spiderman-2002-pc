@@ -402,13 +402,14 @@ enum { PAGE_TOP, PAGE_OPTIONS, PAGE_OTHER };
 #define PAUSE_OPTIONS 2
 static volatile int s_page, s_pause_cur;
 
-/* Difficulty: options + 0x14B0, a 16-bit 0..2 (the menu's Select Difficulty:
- * Easy, Medium, Hard), read by the level scripts through the DIFFICULTY
- * setting. Changed on the top pause page with the shoulders, it is stored
- * at once and takes hold when the level next starts. */
+/* Difficulty: options + 0x14B0, a 16-bit 0..3: the game's Easy, Normal, Hero
+ * and Super Hero (menu.sx's Select Difficulty list, Easy / Medium / Hard, is
+ * a leftover; the secrets name a super hero difficulty), read by the level
+ * scripts through the DIFFICULTY setting. Changed on the pause Options page
+ * with the shoulders, it is stored at once and the level restarts on it. */
 #define SM_PROFILE_DIFFICULTY 0x14B0u
-#define DIFFICULTY_LEVELS     3
-static const char *const s_difficulty_name[DIFFICULTY_LEVELS] = { "Easy", "Medium", "Hard" };
+#define DIFFICULTY_LEVELS     4
+static const char *const s_difficulty_name[DIFFICULTY_LEVELS] = { "Easy", "Normal", "Hero", "Super Hero" };
 
 static int difficulty_get(void)
 {
@@ -425,7 +426,22 @@ static void difficulty_set(int d)
     uint32_t p = profile_of(app_object());
     if (p)
         *(volatile int16_t *)((uint8_t *)g_xbox_mem_offset + p + SM_PROFILE_DIFFICULTY) = (int16_t)d;
-    fprintf(stderr, "  [DIFFICULTY] %s, from the next level start\n", s_difficulty_name[d]);
+    fprintf(stderr, "  [DIFFICULTY] %s: the level restarts on it\n", s_difficulty_name[d]);
+}
+
+/* A change restarts the level so it takes hold at once; the restart waits
+ * for the shoulders to rest a moment (stepping through several levels is one
+ * restart) or for the pause to end. */
+#define DIFFICULTY_SETTLE_MS 1000
+static DWORD s_difficulty_changed;      /* when, or 0: nothing pending */
+
+static void difficulty_restart_due(DWORD t, int now)
+{
+    if (s_difficulty_changed && (now || t - s_difficulty_changed >= DIFFICULTY_SETTLE_MS)) {
+        extern void level_restart_request(void);
+        s_difficulty_changed = 0;
+        level_restart_request();
+    }
 }
 
 static void pause_track(unsigned edge)
@@ -469,6 +485,7 @@ static void filter(int pad, uint8_t *r)
         s_swallow = 0;
         s_page = PAGE_TOP;
         s_pause_cur = 0;
+        difficulty_restart_due(t, 1);
         shocker_input_filter(r);
         movement_stick(r);
         return;
@@ -494,8 +511,10 @@ static void filter(int pad, uint8_t *r)
                 d = (d + (edge & BTN_R1 ? 1 : DIFFICULTY_LEVELS - 1)) % DIFFICULTY_LEVELS;
                 difficulty_set(d);
                 menu_sound(SND_SCROLL);
+                s_difficulty_changed = t ? t : 1;
             }
         }
+        difficulty_restart_due(t, 0);
         r[4 + 4] = r[4 + 5] = 0;        /* the shoulders are that row's while paused */
         if (edge & BTN_Y) {
             read_choice();
