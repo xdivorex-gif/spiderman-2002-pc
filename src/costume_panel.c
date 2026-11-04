@@ -382,6 +382,40 @@ static void apply(int row)
     }
 }
 
+/* Which page of the game's pause menu shows, followed from the presses the
+ * menu gets (its pages are script, with nothing of theirs to read): it
+ * opens on Audio Options, up and down move round its five lines, the cross
+ * opens a page and the circle goes back. The Options page (Control Style,
+ * Movement, Camera Mode) gets a fourth row, Subtitles, toggled with the
+ * square (costume_panel_draw). */
+enum { PAGE_TOP, PAGE_OPTIONS, PAGE_OTHER };
+/* The row, in the guest's 640x480: centre, top, size (1 = the font's 36 px),
+ * and the square's mark beside it (fraction of the width). */
+#define SUB_ROW_X     320.0f
+#define SUB_ROW_Y     343.0f            /* the rows' labels: 182, 242, 293 */
+#define SUB_ROW_GAP   17.0f             /* label to its value */
+#define SUB_ROW_SIZE  0.51f             /* an unfocused row's */
+#define SUB_MARK_X    0.365
+#define PAUSE_LINES   5                 /* Audio, Restart, Options, Combat, Exit */
+#define PAUSE_OPTIONS 2
+static volatile int s_page, s_pause_cur;
+
+static void pause_track(unsigned edge)
+{
+    if (s_page == PAGE_TOP) {
+        if (edge & BTN_UP)
+            s_pause_cur = (s_pause_cur + PAUSE_LINES - 1) % PAUSE_LINES;
+        if (edge & BTN_DOWN)
+            s_pause_cur = (s_pause_cur + 1) % PAUSE_LINES;
+        if (edge & BTN_A)
+            s_page = s_pause_cur == PAUSE_OPTIONS ? PAGE_OPTIONS : PAGE_OTHER;
+    } else if (edge & BTN_B) {
+        s_page = PAGE_TOP;
+    } else if (s_page == PAGE_OTHER && (edge & BTN_A)) {
+        s_page = PAGE_TOP;              /* a Restart / Exit dialog answered */
+    }
+}
+
 static void filter(int pad, uint8_t *r)
 {
     static unsigned prev;
@@ -405,6 +439,8 @@ static void filter(int pad, uint8_t *r)
         s_open = 0;
         s_confirm = 0;
         s_swallow = 0;
+        s_page = PAGE_TOP;
+        s_pause_cur = 0;
         shocker_input_filter(r);
         movement_stick(r);
         return;
@@ -417,12 +453,13 @@ static void filter(int pad, uint8_t *r)
         return;
     }
     if (!s_open) {
-        if (edge & BTN_X) {             /* the pause screen's Subtitles line */
+        pause_track(edge);
+        if ((edge & BTN_X) && s_page == PAGE_OPTIONS) {    /* Options' Subtitles row */
             extern void subtitles_toggle(void);
             subtitles_toggle();
             menu_sound(SND_SCROLL);
         }
-        r[4 + 2] = 0;                   /* X is that line's while paused */
+        r[4 + 2] = 0;                   /* X is that row's while paused */
         if (edge & BTN_Y) {
             read_choice();
             s_sel = s_want_row >= 0 ? s_want_row : worn_row();
@@ -932,15 +969,20 @@ static int font_ready(void)
  * c (RGB) multiplies the glyph's colour. The font has capitals only: as in
  * the pause menu, a lower-case letter is the capital drawn smaller, on the
  * same baseline (31 down the 41-texel cell). */
+static int s_text_grey;                 /* the glyphs' light, not their red */
+static float s_text_wide = 1.0f;        /* letters drawn this much wider */
+static float s_text_track;              /* and this many 640-units apart */
+
 static void game_text(float cx, float top, float size, COLORREF c, const char *t)
 {
-    float sx0 = s_bw / 640.0f * size, sy0 = s_bh / 480.0f * size, pen = 0;
+    float sx0 = s_bw / 640.0f * size * s_text_wide, sy0 = s_bh / 480.0f * size, pen = 0;
+    float track = s_text_track * s_bw / 640.0f;
     const char *q;
     int cr = GetRValue(c), cg = GetGValue(c), cb = GetBValue(c);
 
     for (q = t; *q; q++)
         pen += s_glyphs[(uint8_t)*q].adv * (*q >= 'a' && *q <= 'z' ? 0.8f : 1.0f);
-    pen = cx * s_bw / 640.0f - pen * sx0 * 0.5f;
+    pen = cx * s_bw / 640.0f - (pen * sx0 + track * (float)(strlen(t) - 1)) * 0.5f;
     for (q = t; *q; q++) {
         const Glyph *g = &s_glyphs[(uint8_t)*q];
         float small = *q >= 'a' && *q <= 'z' ? 0.8f : 1.0f;
@@ -978,14 +1020,40 @@ static void game_text(float cx, float top, float size, COLORREF c, const char *t
                 a = (int)ch[0];
                 if (a <= 0)
                     continue;
+                if (s_text_grey) {      /* the pause rows: grey, as bright as the glyph */
+                    float l = (ch[1] > ch[2] ? ch[1] : ch[2]) > ch[3] ? (ch[1] > ch[2] ? ch[1] : ch[2]) : ch[3];
+                    ch[1] = ch[2] = ch[3] = l;
+                }
                 p = s_bits + ((size_t)dy * s_bw + dx) * 4;
                 p[2] = (uint8_t)((p[2] * (255 - a) + ch[1] / ch[0] * cr / 255 * a) / 255);
                 p[1] = (uint8_t)((p[1] * (255 - a) + ch[2] / ch[0] * cg / 255 * a) / 255);
                 p[0] = (uint8_t)((p[0] * (255 - a) + ch[3] / ch[0] * cb / 255 * a) / 255);
             }
         }
-        pen += g->adv * sx;
+        pen += g->adv * sx + track;
     }
+}
+
+/* A face button as the pause footer draws its own: a light ring, the
+ * button's mark inside (a square; X for Xbox prompts). */
+static void button_icon(int cx, int cy, int r, int ps)
+{
+    HPEN pen = CreatePen(PS_SOLID, r / 5 > 1 ? r / 5 : 1, RGB(215, 215, 215)), old;
+    HBRUSH hollow = (HBRUSH)GetStockObject(HOLLOW_BRUSH), oldb;
+    int k = r * 45 / 100;
+
+    old = (HPEN)SelectObject(s_dc, pen);
+    oldb = (HBRUSH)SelectObject(s_dc, hollow);
+    Ellipse(s_dc, cx - r, cy - r, cx + r + 1, cy + r + 1);
+    if (ps) {
+        Rectangle(s_dc, cx - k, cy - k, cx + k + 1, cy + k + 1);
+    } else {
+        MoveToEx(s_dc, cx - k, cy - k, NULL); LineTo(s_dc, cx + k + 1, cy + k + 1);
+        MoveToEx(s_dc, cx + k, cy - k, NULL); LineTo(s_dc, cx - k - 1, cy + k + 1);
+    }
+    SelectObject(s_dc, oldb);
+    SelectObject(s_dc, old);
+    DeleteObject(pen);
 }
 
 static void draw_confirm(void)
@@ -1043,11 +1111,21 @@ void costume_panel_draw(const void **pixels, uint32_t w, uint32_t h, uint32_t *p
         int u = (int)(h / 480.0 * 16 + 0.5);
         const wchar_t *mark = ps_prompts() ? L"\x25A1" : L"X";
         draw_hint();
-        if (font_ready()) {
-            game_text(330, 343, 0.62f, RGB(190, 190, 190),
-                      subtitles_enabled() ? "Subtitles: On" : "Subtitles: Off");
-            text(s_font_item, RGB(220, 220, 220), (int)(w * 0.33), (int)(h / 480.0 * 346), u * 2, u * 2,
-                 DT_CENTER | DT_VCENTER, mark);
+        if (s_page == PAGE_OPTIONS && font_ready()) {
+            /* the fourth row, under Camera Mode, as the game draws its rows:
+             * the label, its value under it, grey */
+            s_text_grey = 1;
+            s_text_wide = 1.3f;
+            s_text_track = 1.6f;
+            game_text(SUB_ROW_X, SUB_ROW_Y, SUB_ROW_SIZE, RGB(168, 168, 168), "Subtitles");
+            game_text(SUB_ROW_X, SUB_ROW_Y + SUB_ROW_GAP, SUB_ROW_SIZE, RGB(168, 168, 168),
+                      subtitles_enabled() ? "On" : "Off");
+            s_text_grey = 0;
+            s_text_wide = 1.0f;
+            s_text_track = 0;
+            button_icon((int)(w * SUB_MARK_X), (int)(h / 480.0 * (SUB_ROW_Y + SUB_ROW_GAP * 0.5f + 6)),
+                        (int)(h / 480.0 * 9.5f), ps_prompts());
+            (void)mark;
         }
     }
     GdiFlush();

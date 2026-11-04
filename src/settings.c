@@ -93,6 +93,14 @@ void settings_apply(void)
         for (i = 0; i < (int)(sizeof s_required / sizeof s_required[0]); i++)
             if (!getenv(s_required[i][0]))
                 set(s_required[i][0], s_required[i][1]);
+    /* The title's threads on one core, as on the console, launched by a
+     * batch file or not. The movie player's two threads hand two mutants
+     * back and forth, and on many cores at once a hand-off was lost after
+     * a few movies: both waited forever, the movie black (kernel_sync.c
+     * breaks such a wait too). One core holds 60 fps in movies and play.
+     * RECOMP_GUEST_CPUS=all for every core. */
+    if (!getenv("RECOMP_GUEST_CPUS"))
+        set("RECOMP_GUEST_CPUS", "one");
 
     /* 2. The player's settings. */
     exe_dir(ini, sizeof ini);

@@ -524,6 +524,14 @@ static DWORD WINAPI hang_watch_main(LPVOID unused)
                     fprintf(stderr, "[HANG] no frame for %d.%d s after %lu: set D3D's fence event\n",
                             still / 2, still % 2 ? 5 : 0, now);
             }
+            /* Four seconds: Bink's two threads may each be waiting on a
+             * mutant the other holds (kernel_sync.c); let such waits go. */
+            if (still >= 8 && still % 4 == 0) {
+                extern void xbox_BreakStalledWaits(void);
+                fprintf(stderr, "[HANG] no frame for %d s after %lu: breaking stalled mutant waits\n",
+                        still / 2, now);
+                xbox_BreakStalledWaits();
+            }
             if (still == 12 && !sampled) {   /* the wake did not help: for the record */
                 sampled = 1;
                 fprintf(stderr, "[HANG] no frame for 6 s after %lu: sampling every thread\n", now);
