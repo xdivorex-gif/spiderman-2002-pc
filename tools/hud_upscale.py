@@ -2,6 +2,7 @@ r"""Upscale HUD art into the texture pack (texpack\<hash>.png).
 
     py -3 tools/hud_upscale.py [--dry | --list]   --list: texpackhud.txt only
     py -3 tools/hud_upscale.py --legal     the boot legal screen (see legal())
+    py -3 tools/hud_upscale.py --loading   the loading screens (see loading())
 
 The health bar (e_healthbar*: its ring and frame), the head icons in it
 (ib_*.dds: each hero's head_icon and
@@ -160,45 +161,88 @@ def esrgan(src, dst):
                    cwd=os.path.dirname(ESRGAN), check=True)
 
 
-def legal(tmp):
-    """The legal screen's logos and font into the pack."""
-    pkg = xbs.Package(os.path.join(GAME, "bonus", "LEGAL.xbs"))
-    mw, mh = 640, 512
-    mosaic = [0] * (mw * mh)
-    tiles = {}
-    for name, (x0, y0) in LEGAL_TILES.items():
-        w, h, px = dds_texels(pkg, name)
-        tiles[name] = (x0, y0, w, h, fnv(px))
-        for y in range(h):
-            mosaic[(y0 + y) * mw + x0:(y0 + y) * mw + x0 + w] = px[y * w:(y + 1) * w]
-    src, dst = os.path.join(tmp, "legal_in"), os.path.join(tmp, "legal_out")
+def file_texels(path):
+    """A loose .dds file (data\\loadtex): its texels as the renderer decodes them."""
+    d = open(path, "rb").read()
+    h, w = struct.unpack_from("<II", d, 12)
+    return w, h, decode_dxt(d[128:], w, h, d[84:88])
+
+
+def mosaics(tmp, tag, sets, singles):
+    """Pictures made of six tiles (sets: {mosaic name: {tile: (x, y, w, h, texels)}})
+    upscaled whole and cut back into tiles, so no seam shows where two tiles
+    meet, and single images (singles: [(w, h, texels)]) as they are."""
+    src, dst = os.path.join(tmp, tag + "_in"), os.path.join(tmp, tag + "_out")
     os.makedirs(src)
     os.makedirs(dst)
-    write_png(os.path.join(src, "mosaic.png"), mosaic, mw, mh)
-    w, h, px = dds_texels(pkg, LEGAL_FONT)
-    write_png(os.path.join(src, "%08X.png" % fnv(px)), px, w, h)
+    for mname, tiles in sets.items():
+        mw = max(x0 + w for x0, y0, w, h, px in tiles.values())
+        mh = max(y0 + h for x0, y0, w, h, px in tiles.values())
+        mosaic = [0] * (mw * mh)
+        for x0, y0, w, h, px in tiles.values():
+            for y in range(h):
+                mosaic[(y0 + y) * mw + x0:(y0 + y) * mw + x0 + w] = px[y * w:(y + 1) * w]
+        write_png(os.path.join(src, mname + ".png"), mosaic, mw, mh)
+    for w, h, px in singles:
+        write_png(os.path.join(src, "%08X.png" % fnv(px)), px, w, h)
     esrgan(src, dst)
-    big = os.path.join(dst, "mosaic.png")
-    for name, (x0, y0, w, h, hsh) in tiles.items():
-        out = os.path.join(dst, "%08X.png" % hsh)
-        subprocess.run(["ffmpeg", "-v", "error", "-y", "-i", big, "-vf",
-                        "crop=%d:%d:%d:%d,format=rgba" % (w * SCALE, h * SCALE, x0 * SCALE, y0 * SCALE),
-                        out], check=True)
-        print("%08X %s" % (hsh, name))
-    os.remove(big)
+    for mname, tiles in sets.items():
+        big = os.path.join(dst, mname + ".png")
+        for name, (x0, y0, w, h, px) in tiles.items():
+            hsh = fnv(px)
+            subprocess.run(["ffmpeg", "-v", "error", "-y", "-i", big, "-vf",
+                            "crop=%d:%d:%d:%d,format=rgba" % (w * SCALE, h * SCALE, x0 * SCALE, y0 * SCALE),
+                            os.path.join(dst, "%08X.png" % hsh)], check=True)
+            print("%08X %s" % (hsh, name))
+        os.remove(big)
     return dst
 
 
+def legal(tmp):
+    """The legal screen's logos and font into the pack."""
+    pkg = xbs.Package(os.path.join(GAME, "bonus", "LEGAL.xbs"))
+    tiles = {}
+    for name, (x0, y0) in LEGAL_TILES.items():
+        w, h, px = dds_texels(pkg, name)
+        tiles[name] = (x0, y0, w, h, px)
+    return mosaics(tmp, "legal", {"legal": tiles}, [dds_texels(pkg, LEGAL_FONT)])
+
+
+# The loading screens (data\loadtex, loose files): two pictures laid out as the
+# legal screen's (m0load* the front end's, smload* the levels'), the spider and
+# its web, and the small alpha image. Their hint text is chis22, which the
+# legal screen's pass already upscales.
+LOAD_SETS = ("m0load", "smload")
+LOAD_SINGLES = ("rspider", "rspiderc", "smalpha")
+
+
+def loading(tmp):
+    """The loading screens' pictures into the pack."""
+    sets = {}
+    for prefix in LOAD_SETS:
+        tiles = {}
+        for k, (x0, y0) in enumerate(LEGAL_TILES.values()):
+            name = "%s%02d" % (prefix, k)
+            w, h, px = file_texels(os.path.join(GAME, "loadtex", name + ".dds"))
+            tiles[name] = (x0, y0, w, h, px)
+        sets[prefix] = tiles
+    singles = [file_texels(os.path.join(GAME, "loadtex", n + ".dds")) for n in LOAD_SINGLES]
+    for n, (w, h, px) in zip(LOAD_SINGLES, singles):
+        print("%08X %s" % (fnv(px), n))
+    return mosaics(tmp, "loading", sets, singles)
+
+
 def main(dry):
-    if "--legal" in sys.argv:
-        with tempfile.TemporaryDirectory() as tmp:
-            dst = legal(tmp)
-            for f in os.listdir(dst):
-                data = open(os.path.join(dst, f), "rb").read()
-                for d in OUT:
-                    open(os.path.join(d, f), "wb").write(data)
-            print("legal screen: %d images into the pack" % len(os.listdir(dst)))
-        return
+    for flag, what, fn in (("--legal", "legal screen", legal), ("--loading", "loading screens", loading)):
+        if flag in sys.argv:
+            with tempfile.TemporaryDirectory() as tmp:
+                dst = fn(tmp)
+                for f in os.listdir(dst):
+                    data = open(os.path.join(dst, f), "rb").read()
+                    for d in OUT:
+                        open(os.path.join(d, f), "wb").write(data)
+                print("%s: %d images into the pack" % (what, len(os.listdir(dst))))
+            return
     found = collect()
     for hsh, (name, w, h, _) in sorted(found.items(), key=lambda kv: kv[1][0]):
         print("%08X %-32s %dx%d" % (hsh, name, w, h))
