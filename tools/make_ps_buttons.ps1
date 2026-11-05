@@ -18,8 +18,14 @@
 # -- is drawn over at its own scale and written as a PNG of that size:
 #
 #   .\tools\make_ps_buttons.ps1 -Source texpack\73E8ECF1.png -Style ps5 -Out texpack\73E8ECF1_ps5.png
+#
+# With no -Source the whole strip is drawn here from nothing -- the d-pad
+# arrows and the move marks round the first cell as well -- so no game art
+# goes into the exe:
+#
+#   .	ools\make_ps_buttons.ps1 -Style ps5
 param(
-    [Parameter(Mandatory = $true)][string]$Source,
+    [string]$Source,
     [ValidateSet("ps5", "ps4")][string]$Style = "ps5",
     [string]$Out
 )
@@ -39,6 +45,8 @@ public static class PsButtons {
     const int W = 512, H = 64;
 
     static Bitmap Load(string path) {
+        if (path == null || path.Length == 0)
+            return new Bitmap(W, H, PixelFormat.Format32bppArgb);   /* blank */
         // An upscaled strip (texpack PNG) is read as it is.
         if (path.EndsWith(".png", StringComparison.OrdinalIgnoreCase)) {
             var png = new Bitmap(path);
@@ -147,7 +155,28 @@ public static class PsButtons {
             g.DrawString(label, f, Brushes.White, r, sf);
     }
 
+    // A d-pad arrow in a grey box, pointing (dx, dy).
+    static void Arrow(Graphics g, RectangleF r, int dx, int dy) {
+        using (var box = new LinearGradientBrush(r, Color.FromArgb(255, 150, 150, 154),
+                                                 Color.FromArgb(255, 92, 92, 96), 90f))
+            g.FillRectangle(box, r);
+        using (var rim = new Pen(Color.FromArgb(255, 210, 210, 214), 1.5f))
+            g.DrawRectangle(rim, r.X, r.Y, r.Width, r.Height);
+        float cx = r.X + r.Width / 2, cy = r.Y + r.Height / 2, a = r.Width * 0.36f, t = r.Width * 0.16f;
+        // An arrow pointing right, turned to (dx, dy).
+        var pts = new PointF[] {
+            new PointF(a, 0), new PointF(0, -a), new PointF(0, -t), new PointF(-a, -t),
+            new PointF(-a, t), new PointF(0, t), new PointF(0, a) };
+        for (int i = 0; i < pts.Length; i++) {
+            float x = pts[i].X, y = pts[i].Y;
+            pts[i] = new PointF(cx + x * dx - y * dy, cy + x * dy + y * dx);
+        }
+        using (var fill = new SolidBrush(Color.FromArgb(255, 200, 200, 204))) g.FillPolygon(fill, pts);
+        using (var edge = new Pen(Color.FromArgb(255, 40, 40, 44), 1.5f)) g.DrawPolygon(edge, pts);
+    }
+
     public static void Make(string src, string dst, bool white) {
+        bool blank = src == null || src.Length == 0;
         using (var bmp = Load(src))
         using (var g = Graphics.FromImage(bmp)) {
             // The layout below is in the 512x64 strip's pixels; a larger
@@ -161,6 +190,15 @@ public static class PsButtons {
             // A little wider than the old button: an upscaled strip's glow spreads.
             Clear(g, new RectangleF(5.25f, 5, 23, 28), true);
             Face(g, 16.5f, cy, 20, "triangle", white);
+            if (blank) {    // the move marks round it: four corner chevrons
+                using (var p = new Pen(Color.FromArgb(255, 235, 235, 238), 2f)) {
+                    float l = 4.5f, x0 = 4f, x1 = 29f, y0 = 4f, y1 = 33f;
+                    g.DrawLines(p, new[] { new PointF(x0, y0 + l), new PointF(x0, y0), new PointF(x0 + l, y0) });
+                    g.DrawLines(p, new[] { new PointF(x1 - l, y0), new PointF(x1, y0), new PointF(x1, y0 + l) });
+                    g.DrawLines(p, new[] { new PointF(x0, y1 - l), new PointF(x0, y1), new PointF(x0 + l, y1) });
+                    g.DrawLines(p, new[] { new PointF(x1 - l, y1), new PointF(x1, y1), new PointF(x1, y1 - l) });
+                }
+            }
             // Triggers.
             Clear(g, new RectangleF(39, 0, 34, 37), false);
             Key(g, new RectangleF(41, 3, 30, 31), "R2");
@@ -179,11 +217,18 @@ public static class PsButtons {
             Key(g, new RectangleF(271, 8, 26, 21), "R1");
             Clear(g, new RectangleF(307, 0, 28, 37), false);
             Key(g, new RectangleF(308, 8, 26, 21), "L1");
+            if (blank) {    // the d-pad arrows: right, down, up, left
+                Arrow(g, new RectangleF(342, 2, 32, 32), 1, 0);
+                Arrow(g, new RectangleF(381, 2, 32, 32), 0, 1);
+                Arrow(g, new RectangleF(422, 2, 32, 32), 0, -1);
+                Arrow(g, new RectangleF(462, 2, 32, 32), -1, 0);
+            }
             Save(bmp, dst);
         }
     }
 }
 "@
 $full = [System.IO.Path]::GetFullPath($Out)
-[PsButtons]::Make((Resolve-Path $Source).Path, $full, $Style -eq "ps5")
+$src = if ($Source) { (Resolve-Path $Source).Path } else { "" }
+[PsButtons]::Make($src, $full, $Style -eq "ps5")
 "wrote $full"

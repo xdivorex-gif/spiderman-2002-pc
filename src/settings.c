@@ -168,6 +168,12 @@ void settings_apply(void)
     }
 
     /* "default" leaves RECOMP_COSTUME as the environment has it (a .bat). */
+    {   /* the player's own copy of the game (main.c, game_dir) */
+        char dir[MAX_PATH];
+        GetPrivateProfileStringA("Game", "DataDir", "", dir, sizeof dir, ini);
+        if (dir[0] && !getenv("RECOMP_GAME_DIR"))
+            set("RECOMP_GAME_DIR", dir);
+    }
     GetPrivateProfileStringA("Game", "Costume", "default", v, sizeof v, ini);
     if (_stricmp(v, "default"))
         set("RECOMP_COSTUME", v);

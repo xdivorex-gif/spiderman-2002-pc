@@ -77,3 +77,28 @@ backup_2026-10-27/
 # Hero previews for the costume panel (tools/xbxm.py --export)
 previews/
 tools/whisper/
+
+# Local runs: logs, captures, recordings, scratch (never part of the port)
+*.wav
+*.log
+*_log*.txt
+*_out.txt
+run_err.txt
+pad_live.txt
+ftrace.flag
+hang_stacks.txt
+backup_*/
+frames/
+logs/
+cap/
+
+# Made from the player's own copy of the game by tools/ (game content:
+# never committed or released)
+overlay/
+texpack/
+previews/
+src/recomp/
+
+# Third-party tools fetched locally
+tools/realesrgan/
+tools/whisper/

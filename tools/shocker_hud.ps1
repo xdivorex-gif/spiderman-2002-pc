@@ -11,7 +11,7 @@
     health bar   e_healthbar_2_rows / _1_row / _circle: the chrome warmed to
                  brass, the red orb his gold; around the lower bar (the heat
                  gauge) his gauntlet, banded, riveted, a knuckle block at the end
-    compass      compas_spider_arrow, compass_glow_01/02: his mask, not the spider
+    compass      compas_spider_arrow, compass_glow_01/02: his head icon, not the spider
     height meter alt_sp_001..003 red to his yellow, alt_dest_001..003 blue to brown
 #>
 $ErrorActionPreference = 'Stop'
@@ -96,59 +96,12 @@ public static class ShockerArt
         return new PointF(cx + x * w, cy + y * h);
     }
 
-    /* His mask, centred on cx, cy, h tall: gold, the brown cap coming to a
-     * point between the eyes, the quilting, white slanted eyes, outlined. */
-    public static void Mask(Graphics g, float cx, float cy, float h)
+    /* An image drawn centred on cx, cy, h tall, its aspect kept. */
+    public static void Emblem(Graphics g, Image img, float cx, float cy, float h)
     {
-        float w = h * 0.76f, ol = Math.Max(1.5f, h * 0.014f), ln = Math.Max(1f, h * 0.0075f);
-        g.SmoothingMode = SmoothingMode.AntiAlias;
-        var oval = new GraphicsPath();
-        oval.AddEllipse(cx - w / 2, cy - h / 2, w, h);
-        using (var br = new SolidBrush(Gold)) g.FillPath(br, oval);
-        var clip = g.Clip;
-        g.SetClip(oval, CombineMode.Intersect);
-
-        var cap = new GraphicsPath();
-        cap.AddLine(P(cx, cy, w, h, -0.60f, -0.60f), P(cx, cy, w, h, -0.60f, -0.33f));
-        cap.AddBezier(P(cx, cy, w, h, -0.60f, -0.33f), P(cx, cy, w, h, -0.20f, -0.31f),
-                      P(cx, cy, w, h, -0.06f, -0.24f), P(cx, cy, w, h, 0.0f, -0.15f));
-        cap.AddBezier(P(cx, cy, w, h, 0.0f, -0.15f), P(cx, cy, w, h, 0.06f, -0.25f),
-                      P(cx, cy, w, h, 0.20f, -0.33f), P(cx, cy, w, h, 0.60f, -0.35f));
-        cap.AddLine(P(cx, cy, w, h, 0.60f, -0.35f), P(cx, cy, w, h, 0.60f, -0.60f));
-        cap.CloseFigure();
-        using (var br = new SolidBrush(Brown)) g.FillPath(br, cap);
-
-        using (var pen = new Pen(Color.Black, ln)) {
-            pen.StartCap = pen.EndCap = LineCap.Round;
-            g.DrawLine(pen, P(cx, cy, w, h, -0.13f, -0.25f), P(cx, cy, w, h, 0.24f, 0.44f));
-            g.DrawLine(pen, P(cx, cy, w, h, 0.09f, -0.24f), P(cx, cy, w, h, -0.21f, 0.46f));
-            g.DrawBezier(pen, P(cx, cy, w, h, -0.33f, -0.30f), P(cx, cy, w, h, -0.44f, -0.05f),
-                              P(cx, cy, w, h, -0.40f, 0.20f), P(cx, cy, w, h, -0.30f, 0.38f));
-            g.DrawBezier(pen, P(cx, cy, w, h, 0.33f, -0.31f), P(cx, cy, w, h, 0.45f, -0.05f),
-                              P(cx, cy, w, h, 0.40f, 0.20f), P(cx, cy, w, h, 0.28f, 0.40f));
-            g.DrawBezier(pen, P(cx, cy, w, h, -0.13f, -0.25f), P(cx, cy, w, h, -0.30f, -0.20f),
-                              P(cx, cy, w, h, -0.42f, -0.12f), P(cx, cy, w, h, -0.50f, -0.04f));
-            g.DrawBezier(pen, P(cx, cy, w, h, 0.09f, -0.24f), P(cx, cy, w, h, 0.25f, -0.18f),
-                              P(cx, cy, w, h, 0.40f, -0.06f), P(cx, cy, w, h, 0.50f, 0.03f));
-            g.DrawBezier(pen, P(cx, cy, w, h, -0.20f, -0.29f), P(cx, cy, w, h, -0.27f, -0.05f),
-                              P(cx, cy, w, h, -0.26f, 0.20f), P(cx, cy, w, h, -0.20f, 0.45f));
-            g.DrawBezier(pen, P(cx, cy, w, h, 0.20f, -0.30f), P(cx, cy, w, h, 0.28f, -0.05f),
-                              P(cx, cy, w, h, 0.27f, 0.20f), P(cx, cy, w, h, 0.22f, 0.45f));
-        }
-        using (var pen = new Pen(Color.Black, ln * 1.4f)) g.DrawPath(pen, cap);
-        g.Clip = clip;
-
-        using (var pen = new Pen(Color.Black, ol * 0.8f)) {
-            pen.LineJoin = LineJoin.Round;
-            for (int side = -1; side <= 1; side += 2) {
-                var eye = new PointF[] {
-                    P(cx, cy, w, h, side * 0.305f, -0.090f), P(cx, cy, w, h, side * 0.090f, 0.012f),
-                    P(cx, cy, w, h, side * 0.130f, 0.072f), P(cx, cy, w, h, side * 0.255f, -0.020f) };
-                g.FillPolygon(Brushes.White, eye);
-                g.DrawPolygon(pen, eye);
-            }
-        }
-        using (var pen = new Pen(Color.Black, ol)) g.DrawPath(pen, oval);
+        float w = h * img.Width / img.Height;
+        g.InterpolationMode = InterpolationMode.HighQualityBicubic;
+        g.DrawImage(img, cx - w / 2, cy - h / 2, w, h);
     }
 
     /* Clear a disc to transparent, or fill it with a colour. */
@@ -317,20 +270,23 @@ foreach ($d in $outs) { $b.Save((Join-Path $d 'shocker_heat.png'), [System.Drawi
 $b = Load 'D14A7147'; [ShockerArt]::Warm($b); Save $b 'D14A7147'
 $b = Load 'A45114FA'; [ShockerArt]::Warm($b); Save $b 'A45114FA'
 
-# Compass: the arrow disc (512, its pointer at the top kept) and both glows.
+# Compass: the arrow disc (512, its pointer at the top kept) and both glows,
+# the game's own Shocker head icon (ib_shocker, 88BFD49F) in the spider's place.
+$icon = Load '88BFD49F'
 $b = Load '8C8B650E'
 [ShockerArt]::Disc($b, 256, 256, 210, [System.Drawing.Color]::Transparent, 84, 96)
-$g = [System.Drawing.Graphics]::FromImage($b); [ShockerArt]::Mask($g, 256, 272, 330); $g.Dispose()
+$g = [System.Drawing.Graphics]::FromImage($b); [ShockerArt]::Emblem($g, $icon, 256, 270, 330); $g.Dispose()
 Save $b '8C8B650E'
 foreach ($h in '4B624D90', '75521338') {
     $b = Load $h
     $grey = $b.GetPixel(128, 30)
     foreach ($p in @(@(128, 225), @(40, 128), @(216, 128))) { $c = $b.GetPixel($p[0], $p[1]); if ($c.GetBrightness() -gt $grey.GetBrightness()) { $grey = $c } }
     [ShockerArt]::Disc($b, 128, 128, 102, $grey, 0, 0)
-    $g = [System.Drawing.Graphics]::FromImage($b); [ShockerArt]::Mask($g, 128, 130, 168); $g.Dispose()
+    $g = [System.Drawing.Graphics]::FromImage($b); [ShockerArt]::Emblem($g, $icon, 128, 129, 168); $g.Dispose()
     Save $b $h
 }
 
 # Height meter: his yellow for the red, brown for the blue.
 foreach ($h in '7DD7A164', '1B0817D1', '7EDB6DC5') { $b = Load $h; [ShockerArt]::RedToYellow($b); Save $b $h }
 foreach ($h in 'F1AC7DC5', '71AC7DC5', '3BAC7DC5') { $b = Load $h; [ShockerArt]::BlueToBrown($b); Save $b $h }
+$icon.Dispose()

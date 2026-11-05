@@ -83,8 +83,31 @@ extern ptrdiff_t g_xbox_mem_offset;
  * Run: py -3 -m tools.xbe_parser game/default.xbe
  */
 #define YOUR_GAME_ENTRY_POINT   0x002A9C38  /* XBE entry point VA */
-#define YOUR_GAME_XBE_PATH      "C:\\Users\\adub9\\xboxrecomp\\game_files\\default.xbe"
-#define YOUR_GAME_DIR            "C:\\Users\\adub9\\xboxrecomp\\game_files"
+
+/* Where the player's own copy of the game is: settings.ini [Game] DataDir
+ * (RECOMP_GAME_DIR, settings.c), else a "game" folder beside the exe (as the
+ * installer lays it out), else the development tree's. It holds default.xbe
+ * and the data folder. */
+static const char *game_dir(void)
+{
+    static char dir[MAX_PATH];
+    const char *e = getenv("RECOMP_GAME_DIR");
+    char *slash;
+
+    if (dir[0])
+        return dir;
+    if (e && *e) {
+        _snprintf(dir, sizeof dir - 1, "%s", e);
+    } else {
+        GetModuleFileNameA(NULL, dir, MAX_PATH);
+        if ((slash = strrchr(dir, '\\')) != NULL)
+            strcpy(slash + 1, "game");
+        if (GetFileAttributesA(dir) == INVALID_FILE_ATTRIBUTES)
+            strcpy(dir, "C:\\Users\\adub9\\xboxrecomp\\game_files");
+    }
+    dir[sizeof dir - 1] = 0;
+    return dir;
+}
 
 /* ── Forward declarations ──────────────────────────────────── */
 
@@ -703,10 +726,14 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance,
     AddVectoredExceptionHandler(1, veh_handler);
 
     /* Step 1: Load XBE */
-    if (!load_xbe(YOUR_GAME_XBE_PATH, &xbe_data, &xbe_size)) {
+    char xbe_path[MAX_PATH];
+    _snprintf(xbe_path, sizeof xbe_path - 1, "%s\\default.xbe", game_dir());
+    xbe_path[sizeof xbe_path - 1] = 0;
+    if (!load_xbe(xbe_path, &xbe_data, &xbe_size)) {
         MessageBoxA(NULL, "Failed to load default.xbe.\n"
-                    "Place the game files in the 'game' subdirectory.",
-                    "Recomp", MB_ICONERROR);
+                    "Run the installer, or set [Game] DataDir in settings.ini\n"
+                    "to the folder holding your copy of the game.",
+                    "Spider-Man", MB_ICONERROR);
         return 1;
     }
     printf("XBE loaded: %zu bytes\n", xbe_size);
@@ -764,7 +791,7 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance,
     /* Step 4: Set game directory for file I/O path translation */
     {
         extern void xbox_path_init(const char *game_dir, const char *save_dir);
-        xbox_path_init(YOUR_GAME_DIR, NULL);
+        xbox_path_init(game_dir(), NULL);
     }
 
     /* Step 5: Initialize kernel bridge (thunk table in Xbox memory) */
