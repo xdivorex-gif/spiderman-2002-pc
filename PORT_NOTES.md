@@ -1,13 +1,13 @@
 # Spider-Man (2002, Xbox) → PC: port notes
 
 Static recompilation with [xboxrecomp](https://github.com/sp00nznet/xboxrecomp),
-cloned at `C:\Users\adub9\xboxrecomp`. Read this first in a new session.
+cloned at `%USERPROFILE%\xboxrecomp`. Read this first in a new session.
 
 ## Layout
 
 | Path | What |
 |---|---|
-| `C:\Users\adub9\xboxrecomp\game_files\` | unpacked disc: `default.xbe` + `data\` (not in git) |
+| `%USERPROFILE%\xboxrecomp\game_files\` | unpacked disc: `default.xbe` + `data\` (not in git) |
 | `regen.sh` | whole pipeline (disasm → func_id → abi → Ghidra names → lift to C) + build; `regen.sh lift` = lift + build only (after editing recomp_manual.c) |
 | `run.ps1` | run the exe for N seconds with env switches; logs to `run_out.txt` / `run_err.txt` |
 | `seeds\manual_seeds.json` | function entries found by hand, fed to the disassembler |

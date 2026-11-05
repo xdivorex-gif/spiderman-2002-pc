@@ -19,6 +19,7 @@
 #include <shobjidl.h>
 #include <shellapi.h>
 #include <bcrypt.h>
+#include <stdarg.h>
 #include <stdio.h>
 #include <wchar.h>
 
@@ -63,6 +64,18 @@ static int s_silent, s_silent_ok;
 static wchar_t s_silent_msg[512];
 
 static int px(int v) { return MulDiv(v, s_dpi, 96); }
+
+/* Formats a path into out (MAX_PATH): always terminated; 0 when it did not
+ * fit (callers that write files fail then rather than use a cut path). */
+static int pathf(wchar_t *out, const wchar_t *fmt, ...)
+{
+    va_list ap;
+    int n;
+    va_start(ap, fmt);
+    n = _vsnwprintf_s(out, MAX_PATH, _TRUNCATE, fmt, ap);
+    va_end(ap);
+    return n >= 0;
+}
 
 static void status(const wchar_t *t) { SetWindowTextW(s_status, t); }
 
@@ -192,12 +205,19 @@ static BYTE *iso_dir(DWORD sec, DWORD size)
 
 typedef int (*iso_visit_fn)(const char *name, int name_len, DWORD sec, DWORD size, int is_dir, void *ctx);
 
+/* Entries any one look at the image may visit: the game has about a thousand,
+ * so this only stops a crafted image whose tree or folders loop. */
+static long s_iso_budget;
+#define ISO_BUDGET 200000
+
 /* Calls fn for each entry of the table in order; stops at the first 0 from fn. */
 static int iso_walk(const BYTE *t, DWORD size, DWORD off, iso_visit_fn fn, void *ctx, int depth)
 {
     WORD left, right;
     DWORD sec, len;
-    if (depth > 64 || off + 14 > size)
+    if (--s_iso_budget < 0)
+        return 0;
+    if (depth > 64 || size < 14 || off > size - 14)
         return 1;
     memcpy(&left, t + off, 2);
     memcpy(&right, t + off + 2, 2);
@@ -234,6 +254,7 @@ static int iso_find(DWORD dir_sec, DWORD dir_size, const char *name, struct iso_
     memset(q, 0, sizeof *q);
     q->name = name;
     if (t) {
+        s_iso_budget = ISO_BUDGET;
         iso_walk(t, dir_size, 0, iso_find_fn, q, 0);
         free(t);
     }
@@ -277,13 +298,13 @@ static const wchar_t *check_game(const wchar_t *dir)
             return check_iso(dir);
         return L"That file or folder does not exist. Choose your game's .iso, or its unpacked folder.";
     }
-    _snwprintf(p, MAX_PATH, L"%s\\default.xbe", dir);
+    pathf(p, L"%s\\default.xbe", dir);
     if (!exists(p))
         return L"That folder has no default.xbe. Choose your game's .iso, or the folder of your unpacked disc.";
-    _snwprintf(p, MAX_PATH, L"%s\\data\\heroes", dir);
+    pathf(p, L"%s\\data\\heroes", dir);
     if (!is_dir(p))
         return L"That folder has no data folder with the game's files. Choose the whole unpacked disc.";
-    _snwprintf(p, MAX_PATH, L"%s\\default.xbe", dir);
+    pathf(p, L"%s\\default.xbe", dir);
     sha1_file(p, sum);
     if (strcmp(sum, XBE_SHA1) != 0)
         return L"This is not the release of the game the port is made for (default.xbe does not "
@@ -302,13 +323,13 @@ static ULONGLONG tree_size(const wchar_t *dir)
     HANDLE h;
     ULONGLONG n = 0;
 
-    _snwprintf(pat, MAX_PATH, L"%s\\*", dir);
+    pathf(pat, L"%s\\*", dir);
     if ((h = FindFirstFileW(pat, &fd)) == INVALID_HANDLE_VALUE)
         return 0;
     do {
         if (!wcscmp(fd.cFileName, L".") || !wcscmp(fd.cFileName, L".."))
             continue;
-        _snwprintf(sub, MAX_PATH, L"%s\\%s", dir, fd.cFileName);
+        pathf(sub, L"%s\\%s", dir, fd.cFileName);
         if (fd.dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY)
             n += tree_size(sub);
         else
@@ -339,14 +360,18 @@ static int copy_tree(const wchar_t *from, const wchar_t *to)
     int ok = 1;
 
     CreateDirectoryW(to, NULL);
-    _snwprintf(pat, MAX_PATH, L"%s\\*", from);
+    pathf(pat, L"%s\\*", from);
     if ((h = FindFirstFileW(pat, &fd)) == INVALID_HANDLE_VALUE)
         return 0;
     do {
         if (!wcscmp(fd.cFileName, L".") || !wcscmp(fd.cFileName, L".."))
             continue;
-        _snwprintf(a, MAX_PATH, L"%s\\%s", from, fd.cFileName);
-        _snwprintf(b, MAX_PATH, L"%s\\%s", to, fd.cFileName);
+        if (!pathf(a, L"%s\\%s", from, fd.cFileName) || !pathf(b, L"%s\\%s", to, fd.cFileName)) {
+            ok = 0;
+            break;
+        }
+        if (fd.dwFileAttributes & FILE_ATTRIBUTE_REPARSE_POINT)
+            continue;   /* a link inside the game folder: not followed */
         if (fd.dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY) {
             ok = copy_tree(a, b);
         } else {
@@ -361,7 +386,22 @@ static int copy_tree(const wchar_t *from, const wchar_t *to)
 }
 
 /* Unpacking a disc image into the install folder. */
-struct iso_tree { const wchar_t *to; int ok, depth; };
+struct iso_tree {
+    const wchar_t *to;
+    int ok, depth;
+    DWORD sec;                          /* this folder's table */
+    const struct iso_tree *parent;
+};
+
+/* 1 when the folder at sec is this one or one it is inside: a crafted image
+ * whose folder holds itself, which would otherwise unpack again and again. */
+static int iso_loops(const struct iso_tree *t, DWORD sec)
+{
+    for (; t; t = t->parent)
+        if (t->sec == sec)
+            return 1;
+    return 0;
+}
 
 static void post_progress(void)
 {
@@ -377,16 +417,37 @@ static int iso_size_fn(const char *name, int n, DWORD sec, DWORD size, int is_di
     struct iso_tree *t = (struct iso_tree *)ctx;
     (void)name; (void)n;
     if (is_dir) {
-        BYTE *d = t->depth < 32 ? iso_dir(sec, size) : NULL;
+        struct iso_tree sub = { NULL, 1, t->depth + 1, sec, t };
+        BYTE *d = sub.depth < 32 && !iso_loops(t, sec) ? iso_dir(sec, size) : NULL;
         if (d) {
-            t->depth++;
-            iso_walk(d, size, 0, iso_size_fn, ctx, 0);
-            t->depth--;
+            iso_walk(d, size, 0, iso_size_fn, &sub, 0);
             free(d);
         }
     } else {
         s_total += size;
     }
+    return 1;
+}
+
+/* 1 when an image's file name is safe to write as one name in a folder:
+ * no separators, drive or stream colons, wildcards or control characters,
+ * not "." or "..", no trailing dot or space, not a device (CON, NUL, COM1...). */
+static int safe_name(const wchar_t *w)
+{
+    static const wchar_t *const dev[] = { L"CON", L"PRN", L"AUX", L"NUL", L"CONIN$", L"CONOUT$" };
+    size_t n = wcslen(w), stem, i;
+    const wchar_t *c;
+    if (!n || !wcscmp(w, L".") || !wcscmp(w, L"..") || w[n - 1] == L'.' || w[n - 1] == L' ')
+        return 0;
+    for (c = w; *c; c++)
+        if (*c < 32 || wcschr(L"\\/:*?\"<>|", *c))
+            return 0;
+    stem = wcscspn(w, L".");
+    for (i = 0; i < sizeof dev / sizeof *dev; i++)
+        if (wcslen(dev[i]) == stem && !_wcsnicmp(w, dev[i], stem))
+            return 0;
+    if (stem == 4 && (!_wcsnicmp(w, L"COM", 3) || !_wcsnicmp(w, L"LPT", 3)) && w[3] >= L'0' && w[3] <= L'9')
+        return 0;
     return 1;
 }
 
@@ -397,12 +458,19 @@ static int iso_extract_fn(const char *name, int n, DWORD sec, DWORD size, int is
     int wn = MultiByteToWideChar(CP_ACP, 0, name, n, wname, 255);
 
     wname[wn > 0 ? wn : 0] = 0;
-    if (!wname[0] || wcschr(wname, L'\\') || wcschr(wname, L'/') || !wcscmp(wname, L"..") || !wcscmp(wname, L"."))
+    if (!safe_name(wname))
         return 1;   /* not a name to write */
-    _snwprintf(path, MAX_PATH, L"%s\\%s", t->to, wname);
+    if (!pathf(path, L"%s\\%s", t->to, wname)) {
+        t->ok = 0;  /* too long for a path: refuse rather than cut it */
+        return 0;
+    }
     if (is_dir) {
-        struct iso_tree sub = { path, 1, t->depth + 1 };
+        struct iso_tree sub = { path, 1, t->depth + 1, sec, t };
         BYTE *d;
+        if (iso_loops(t, sec)) {
+            t->ok = 0;  /* a folder inside itself: a broken or crafted image */
+            return 0;
+        }
         CreateDirectoryW(path, NULL);
         if (size && sub.depth < 32) {
             if (!(d = iso_dir(sec, size))) {
@@ -444,16 +512,18 @@ static int iso_extract_fn(const char *name, int n, DWORD sec, DWORD size, int is
 
 static int iso_extract(const wchar_t *to)
 {
-    struct iso_tree t = { to, 1, 0 };
+    struct iso_tree t = { to, 1, 0, s_iso_root_sec, NULL };
     BYTE *root = iso_dir(s_iso_root_sec, s_iso_root_size);
     if (!root)
         return 0;
     s_total = s_done = 0;
+    s_iso_budget = ISO_BUDGET;
     iso_walk(root, s_iso_root_size, 0, iso_size_fn, &t, 0);
     CreateDirectoryW(to, NULL);
+    s_iso_budget = ISO_BUDGET;
     iso_walk(root, s_iso_root_size, 0, iso_extract_fn, &t, 0);
     free(root);
-    return t.ok;
+    return t.ok && s_iso_budget >= 0;
 }
 
 /* The HD upgrades: a pack of files (tools/make_extras_pack.py) unpacked
@@ -501,7 +571,7 @@ static int unpack_extras(const wchar_t *dir)
             return 0;
         for (q = wrel; *q; q++)
             if (*q == L'/') *q = L'\\';
-        _snwprintf(path, MAX_PATH, L"%s\\%s", dir, wrel);
+        pathf(path, L"%s\\%s", dir, wrel);
         if ((q = wcsrchr(path, L'\\')) != NULL) {
             *q = 0;
             SHCreateDirectoryExW(NULL, path, NULL);
@@ -562,7 +632,7 @@ static void done(int ok, const wchar_t *msg)
 {
     if (s_silent) {
         s_silent_ok = ok;
-        _snwprintf(s_silent_msg, 511, L"%s", msg);
+        _snwprintf_s(s_silent_msg, 512, _TRUNCATE, L"%s", msg);
         return;
     }
     size_t n = wcslen(msg) + 1;
@@ -585,8 +655,8 @@ static DWORD WINAPI install_thread(LPVOID unused)
         done(0, L"Could not create the install folder. Choose another one.");
         return 0;
     }
-    _snwprintf(p, MAX_PATH, L"%s\\spiderman_recomp.exe", s_dst_dir);
-    _snwprintf(launcher, MAX_PATH, L"%s\\SpiderManLauncher.exe", s_dst_dir);
+    pathf(p, L"%s\\spiderman_recomp.exe", s_dst_dir);
+    pathf(launcher, L"%s\\SpiderManLauncher.exe", s_dst_dir);
     if (!write_resource(RES_GAME_EXE, p) || !write_resource(RES_LAUNCHER_EXE, launcher)) {
         done(0, L"Could not write the game's files into the install folder. Is the game running?");
         return 0;
@@ -594,15 +664,16 @@ static DWORD WINAPI install_thread(LPVOID unused)
     if (s_iso != INVALID_HANDLE_VALUE) {
         /* An image can only be used unpacked: always into <install>\game. */
         s_copy_game = 1;
-        _snwprintf(game, MAX_PATH, L"%s\\game", s_dst_dir);
+        pathf(game, L"%s\\game", s_dst_dir);
         if (!iso_extract(game)) {
             iso_close();
-            done(0, L"Unpacking your disc image failed part way. Check there is enough free space and try again.");
+            done(0, L"Unpacking your disc image failed part way. The image may be damaged, or there is not "
+                    L"enough free space.");
             return 0;
         }
         iso_close();
     } else if (s_copy_game) {
-        _snwprintf(game, MAX_PATH, L"%s\\game", s_dst_dir);
+        pathf(game, L"%s\\game", s_dst_dir);
         s_total = tree_size(s_src_dir);
         s_done = 0;
         if (!copy_tree(s_src_dir, game)) {
@@ -619,7 +690,7 @@ static DWORD WINAPI install_thread(LPVOID unused)
         }
     }
     /* settings.ini: the launcher fills in the rest the first time it saves. */
-    _snwprintf(ini, MAX_PATH, L"%s\\settings.ini", s_dst_dir);
+    pathf(ini, L"%s\\settings.ini", s_dst_dir);
     if (!exists(ini) && (f = _wfopen(ini, L"w")) != NULL) {
         fwprintf(f, L"[Display]\nResolution=1920x1080\nAspectRatio=widescreen\nFullscreen=1\nVSync=1\n\n[Game]\n");
         if (!s_copy_game)
@@ -629,12 +700,12 @@ static DWORD WINAPI install_thread(LPVOID unused)
         WritePrivateProfileStringW(L"Game", L"DataDir", s_src_dir, ini);
     }
     if (!s_no_shortcuts && SUCCEEDED(SHGetKnownFolderPath(&FOLDERID_Desktop, 0, NULL, &known))) {
-        _snwprintf(link, MAX_PATH, L"%s\\Spider-Man.lnk", known);
+        pathf(link, L"%s\\Spider-Man.lnk", known);
         shortcut(link, launcher, s_dst_dir);
         CoTaskMemFree(known);
     }
     if (!s_no_shortcuts && SUCCEEDED(SHGetKnownFolderPath(&FOLDERID_Programs, 0, NULL, &known))) {
-        _snwprintf(link, MAX_PATH, L"%s\\Spider-Man.lnk", known);
+        pathf(link, L"%s\\Spider-Man.lnk", known);
         shortcut(link, launcher, s_dst_dir);
         CoTaskMemFree(known);
     }
@@ -741,7 +812,7 @@ static LRESULT CALLBACK wnd_proc(HWND w, UINT m, WPARAM wp, LPARAM lp)
         s_install = add(L"BUTTON", L"Install", BS_DEFPUSHBUTTON, 366, 370, 82, 28, ID_INSTALL, s_font);
         add(L"BUTTON", L"Close", BS_PUSHBUTTON, 458, 370, 82, 28, ID_CLOSE, s_font);
         if (SUCCEEDED(SHGetKnownFolderPath(&FOLDERID_UserProgramFiles, 0, NULL, &local))) {
-            _snwprintf(def, MAX_PATH, L"%s\\Spider-Man", local);
+            pathf(def, L"%s\\Spider-Man", local);
             SetWindowTextW(s_dst, def);
             CoTaskMemFree(local);
         }
@@ -798,6 +869,9 @@ int WINAPI wWinMain(HINSTANCE inst, HINSTANCE prev, PWSTR cmd, int show)
     INITCOMMONCONTROLSEX icc = { sizeof icc, ICC_PROGRESS_CLASS | ICC_STANDARD_CLASSES };
 
     (void)prev;
+    /* DLLs from System32 only, never the folder the installer was downloaded
+     * to (a planted DLL there would otherwise load into it). */
+    SetDefaultDllDirectories(LOAD_LIBRARY_SEARCH_SYSTEM32);
     s_no_shortcuts = cmd && wcsstr(cmd, L"/noshortcuts") != NULL;
     if (cmd && wcsstr(cmd, L"/silent")) {
         int argc, i;
@@ -820,7 +894,7 @@ int WINAPI wWinMain(HINSTANCE inst, HINSTANCE prev, PWSTR cmd, int show)
         else
             install_thread(NULL);
         SHCreateDirectoryExW(NULL, s_dst_dir, NULL);
-        _snwprintf(res, MAX_PATH, L"%s\\setup_result.txt", s_dst_dir);
+        pathf(res, L"%s\\setup_result.txt", s_dst_dir);
         if ((f = _wfopen(res, L"w")) != NULL) {
             fwprintf(f, L"%s\n%s\n", s_silent_ok ? L"ok" : L"failed", s_silent_msg);
             fclose(f);

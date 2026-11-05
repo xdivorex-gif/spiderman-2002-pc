@@ -15,7 +15,7 @@ import subprocess
 import sys
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-MOVIES = r"C:\Users\adub9\xboxrecomp\game_files\data\movies"
+MOVIES = os.path.join(os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "..", "xboxrecomp", "game_files"), "data", "movies")
 ESRGAN = os.path.join(ROOT, "tools", "realesrgan", "realesrgan-ncnn-vulkan.exe")
 OUT = os.path.join(ROOT, "build", "Release", "movies")
 HEIGHT = 1440

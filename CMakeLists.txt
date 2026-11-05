@@ -164,6 +164,20 @@ add_dependencies(SpiderManSetup ${PROJECT_NAME} SpiderManLauncher)
 set_source_files_properties(${CMAKE_BINARY_DIR}/setup.rc PROPERTIES
     OBJECT_DEPENDS "${SETUP_DEPENDS}")
 
+# Every exe loads its DLLs (static imports too) from System32 only, never
+# from the folder it sits in or was downloaded to: no DLL planting.
+if(MSVC)
+    foreach(t ${PROJECT_NAME} SpiderManLauncher SpiderManSetup)
+        target_link_options(${t} PRIVATE /DEPENDENTLOADFLAG:0x800)
+    endforeach()
+    # Control Flow Guard on the launcher and installer (the game's generated
+    # code makes too many indirect calls to pay for it).
+    foreach(t SpiderManLauncher SpiderManSetup)
+        target_compile_options(${t} PRIVATE /guard:cf)
+        target_link_options(${t} PRIVATE /guard:cf)
+    endforeach()
+endif()
+
 # The game's text with PC wording (tools/make_overlay.py builds overlay/),
 # beside the exe where settings.c points RECOMP_OVERLAY_DIR.
 if(EXISTS ${CMAKE_CURRENT_SOURCE_DIR}/overlay)

@@ -24,7 +24,7 @@ import subprocess
 import sys
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-DATA = r"C:\Users\adub9\xboxrecomp\game_files\data"
+DATA = os.path.join(os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "..", "xboxrecomp", "game_files"), "data")
 WORK = os.path.join(ROOT, "cap", "subs")
 VOICE, MOVIE = os.path.join(WORK, "voice"), os.path.join(WORK, "movie")
 WHISPER = os.path.join(ROOT, "tools", "whisper")

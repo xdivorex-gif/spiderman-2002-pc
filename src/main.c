@@ -102,8 +102,14 @@ static const char *game_dir(void)
         GetModuleFileNameA(NULL, dir, MAX_PATH);
         if ((slash = strrchr(dir, '\\')) != NULL)
             strcpy(slash + 1, "game");
-        if (GetFileAttributesA(dir) == INVALID_FILE_ATTRIBUTES)
-            strcpy(dir, "C:\\Users\\adub9\\xboxrecomp\\game_files");
+        if (GetFileAttributesA(dir) == INVALID_FILE_ATTRIBUTES && slash) {
+            /* A build in the source tree (build\Release\): the toolkit's
+             * game_files beside this repository, ..\xboxrecomp\game_files. */
+            char rel[MAX_PATH];
+            strcpy(slash + 1, "..\\..\\..\\xboxrecomp\\game_files");
+            if (GetFullPathNameA(dir, MAX_PATH, rel, NULL))
+                strcpy(dir, rel);
+        }
     }
     dir[sizeof dir - 1] = 0;
     return dir;
@@ -691,6 +697,8 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance,
     (void)hPrevInstance;
     (void)lpCmdLine;
     (void)nCmdShow;
+    /* DLLs from System32 only, not the install folder or the current one. */
+    SetDefaultDllDirectories(LOAD_LIBRARY_SEARCH_SYSTEM32);
 
     /* settings.ini and the default switches (settings.c), before anything
      * reads an environment variable. */

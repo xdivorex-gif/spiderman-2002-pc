@@ -20,7 +20,7 @@ import sys
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 PROJECT = os.path.dirname(HERE)
-GAME = sys.argv[1] if len(sys.argv) > 1 else r"C:\Users\adub9\xboxrecomp\game_files"
+GAME = sys.argv[1] if len(sys.argv) > 1 else os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "..", "xboxrecomp", "game_files")
 
 # key -> (PC text, PlayStation text); None for the second means the same.
 EDITS = {

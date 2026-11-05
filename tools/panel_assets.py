@@ -17,7 +17,7 @@ import xbs
 from hud_upscale import decode_dxt
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-DATA = r"C:\Users\adub9\xboxrecomp\game_files\data"
+DATA = os.path.join(os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "..", "xboxrecomp", "game_files"), "data")
 OUTS = [os.path.join(ROOT, "build", d, "panel") for d in ("Release", "Test")]
 SOUNDS = ("button_scroll", "button_confirm", "button_back")
 

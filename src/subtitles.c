@@ -93,6 +93,8 @@ void subtitles_init(void)
         *q++ = 0;
         if (kind == 'v') {
             float secs = (float)strtod(q, &r);
+            if (!*r)
+                continue;                       /* no text after the time */
             s_voice[s_nvoice].name = name;
             s_voice[s_nvoice].secs = secs;
             s_voice[s_nvoice].text = r + 1;
@@ -103,6 +105,8 @@ void subtitles_init(void)
             s_nvoice++;
         } else if (kind == 'm') {
             float a = (float)strtod(q, &r), b = (float)strtod(r, &r);
+            if (!*r)
+                continue;
             s_movie[s_nmovie].name = name;
             s_movie[s_nmovie].a = a;
             s_movie[s_nmovie].b = b;

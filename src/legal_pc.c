@@ -58,8 +58,12 @@ static int getbits(Bits *b, int k, uint32_t *v)
     return 1;
 }
 
+#define INFLATE_MAX (64u << 20)   /* far above any package; stops a "zip bomb" */
+
 static int put(Buf *o, uint8_t c)
 {
+    if (o->n >= INFLATE_MAX)
+        return 0;
     if (o->n == o->cap) {
         size_t cap = o->cap ? o->cap * 2 : 1 << 16;
         uint8_t *d = (uint8_t *)realloc(o->d, cap);
@@ -79,7 +83,7 @@ static void huff_build(Huff *h, const uint8_t *len, int n)
 {
     uint16_t offs[16];
     int i;
-    memset(h->count, 0, sizeof h->count);
+    memset(h, 0, sizeof *h);
     for (i = 0; i < n; i++)
         h->count[len[i]]++;
     h->count[0] = 0;
@@ -188,13 +192,15 @@ static int inflate_zlib(const uint8_t *src, size_t n, Buf *o)
                 return 0;
         } else if (type == 2) {             /* dynamic codes */
             static const uint8_t order[19] = { 16, 17, 18, 0, 8, 7, 9, 6, 10, 5, 11, 4, 12, 3, 13, 2, 14, 1, 15 };
-            uint8_t l[288 + 30];
+            uint8_t l[288 + 32];
             uint32_t hlit, hdist, hclen, v;
             Huff lc, lit, dist;
             int i, nlen;
             if (!getbits(&b, 5, &hlit) || !getbits(&b, 5, &hdist) || !getbits(&b, 4, &hclen))
                 return 0;
             hlit += 257; hdist += 1; hclen += 4;
+            if (hlit > 286 || hdist > 30)       /* RFC 1951 limits; more would overrun l */
+                return 0;
             memset(l, 0, 19);
             for (i = 0; i < (int)hclen; i++) {
                 if (!getbits(&b, 3, &v))

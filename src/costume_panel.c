@@ -688,7 +688,11 @@ static HModel *model(int row)
     for (i = 0; i < m->nx; i++) {
         uint32_t th[4];
         uint8_t *blocks;
-        if (fread(th, 4, 4, f) != 4 || th[0] > 2048 || th[1] > 2048 || th[3] > 8 << 20)
+        /* Whole 4x4 blocks only, and enough block data for them: the
+         * decoder writes and reads exactly that much. */
+        if (fread(th, 4, 4, f) != 4 || !th[0] || !th[1] || th[0] > 2048 || th[1] > 2048
+            || th[0] % 4 || th[1] % 4 || th[3] > 8 << 20
+            || th[3] < (th[0] / 4) * (th[1] / 4) * (th[2] == 0x35545844 ? 16u : 8u))
             goto bad;
         blocks = malloc(th[3]);
         m->x[i].w = th[0];
@@ -769,11 +773,14 @@ static void draw_model(HModel *m, float yaw, int x0, int y0, int x1, int y1)
         uint32_t t;
         for (t = m->p[p].first; t < m->p[p].first + m->p[p].count && t < m->nt; t++) {
             int a = m->t[3 * t], b = m->t[3 * t + 1], c = m->t[3 * t + 2];
-            float ax = sx[a], ay = syy[a], bx = sx[b], by = syy[b], qx = sx[c], qy = syy[c];
-            float den = (by - qy) * (ax - qx) + (qx - bx) * (ay - qy);
+            float ax, ay, bx, by, qx, qy, den;
             int minx, maxx, miny, maxy, x, y, shade;
             float nx, ny, nz, nl;
-            if (a >= (int)m->nv || b >= (int)m->nv || c >= (int)m->nv || fabsf(den) < 1e-6f)
+            if (a < 0 || b < 0 || c < 0 || a >= (int)m->nv || b >= (int)m->nv || c >= (int)m->nv)
+                continue;               /* checked before the vertices are read */
+            ax = sx[a]; ay = syy[a]; bx = sx[b]; by = syy[b]; qx = sx[c]; qy = syy[c];
+            den = (by - qy) * (ax - qx) + (qx - bx) * (ay - qy);
+            if (fabsf(den) < 1e-6f)
                 continue;
             /* Face light: the normal in view space, against a light from the
              * front, a little above and left; both faces lit. */

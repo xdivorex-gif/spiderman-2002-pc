@@ -23,7 +23,7 @@ import sys
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import xbs
 
-GAME = r"C:\Users\adub9\xboxrecomp\game_files\data"
+GAME = os.path.join(os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "..", "xboxrecomp", "game_files"), "data")
 BUDGET = 6000000        # aux_xbox.txt bytes for the package; game's own: 4092800
 
 # Spider-Man animation file -> the Shocker's.

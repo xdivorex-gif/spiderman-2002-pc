@@ -27,7 +27,7 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import xbs
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-GAME = r"C:\Users\adub9\xboxrecomp\game_files\data"
+GAME = os.path.join(os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "..", "xboxrecomp", "game_files"), "data")
 ESRGAN = os.path.join(ROOT, "tools", "realesrgan", "realesrgan-ncnn-vulkan.exe")
 MODEL = "realesrgan-x4plus-anime"
 OUT = (os.path.join(ROOT, "texpack"), os.path.join(ROOT, "build", "Release", "texpack"))

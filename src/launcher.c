@@ -693,6 +693,7 @@ int WINAPI WinMain(HINSTANCE inst, HINSTANCE prev, LPSTR cmd, int show)
     INITCOMMONCONTROLSEX icc = { sizeof icc, ICC_STANDARD_CLASSES };
 
     (void)prev; (void)cmd;
+    SetDefaultDllDirectories(LOAD_LIBRARY_SEARCH_SYSTEM32);   /* no DLLs from its own folder */
     SetProcessDPIAware();
     InitCommonControlsEx(&icc);
     GetModuleFileNameA(NULL, s_dir, sizeof s_dir);
