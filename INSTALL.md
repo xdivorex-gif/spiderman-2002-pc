@@ -4,7 +4,7 @@ This guide takes you from your Xbox disc to playing the PC port. It takes
 about ten minutes, most of it copying the game.
 
 **Download:** [SpiderManSetup.exe](https://github.com/xdivorex-gif/spiderman-2002-pc/releases/latest/download/SpiderManSetup.exe)
-(about 42 MB) · [all releases](https://github.com/xdivorex-gif/spiderman-2002-pc/releases)
+(about 220 MB) · [all releases](https://github.com/xdivorex-gif/spiderman-2002-pc/releases)
 
 > The installer contains no game files. You need your own copy of the
 > original Xbox game, *Spider-Man* (2002, NTSC release).
@@ -44,7 +44,10 @@ on your own console or with a compatible drive.
    everything in one place (about 2 GB). Untick it to use an unpacked game
    folder where it is; keep that folder in place afterwards. A disc image is
    always unpacked into the install folder.
-5. Click **Install**.
+5. **Install the HD upgrades:** leave it ticked for the sharper textures, HUD
+   and loading screens, upscaled movies, subtitles and the Shocker costume
+   (about 180 MB).
+6. Click **Install**.
 
 The installer checks that your `default.xbe` is the release the port is made
 for. If it says the file does not match, you have a different release (for

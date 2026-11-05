@@ -149,6 +149,14 @@ set(SETUP_GAME_EXE "${CMAKE_BINARY_DIR}/Release/spiderman_recomp.exe")
 set(SETUP_LAUNCHER_EXE "${CMAKE_BINARY_DIR}/Release/SpiderManLauncher.exe")
 set(SETUP_RC "201 RCDATA \"${SETUP_GAME_EXE}\"\n202 RCDATA \"${SETUP_LAUNCHER_EXE}\"\n")
 set(SETUP_DEPENDS "${SETUP_GAME_EXE};${SETUP_LAUNCHER_EXE}")
+# The HD upgrades (build/extras.pak, made by tools/make_extras_pack.py from
+# the game-derived extras beside the exe): offered as an install option.
+set(SETUP_EXTRAS "${CMAKE_BINARY_DIR}/extras.pak")
+if(EXISTS ${SETUP_EXTRAS})
+    string(APPEND SETUP_RC "204 RCDATA \"${SETUP_EXTRAS}\"
+")
+    list(APPEND SETUP_DEPENDS ${SETUP_EXTRAS})
+endif()
 file(WRITE ${CMAKE_BINARY_DIR}/setup.rc "${SETUP_RC}")
 add_executable(SpiderManSetup WIN32 src/setup.c ${CMAKE_BINARY_DIR}/setup.rc)
 target_link_libraries(SpiderManSetup PRIVATE comctl32 bcrypt shell32 ole32 uuid)

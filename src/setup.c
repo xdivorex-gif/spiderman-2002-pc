@@ -31,6 +31,7 @@ static const char XBE_SHA1[] = "09fad7548d11503458882f5c8ab45d8ed86d2a42";
 
 #define RES_GAME_EXE     201
 #define RES_LAUNCHER_EXE 202
+#define RES_EXTRAS       204   /* the HD upgrades (tools/make_extras_pack.py), when built in */
 
 #define ID_SRC       101
 #define ID_SRC_BROWSE 102
@@ -42,10 +43,14 @@ static const char XBE_SHA1[] = "09fad7548d11503458882f5c8ab45d8ed86d2a42";
 #define ID_STATUS    106
 #define ID_PROGRESS  107
 #define ID_SRC_IMAGE 108
+#define ID_EXTRAS    109
 
 #define WM_SETUP_PROGRESS (WM_APP + 1)  /* wParam: done / 1 MB, lParam: total / 1 MB */
+#define WM_SETUP_STATUS   (WM_APP + 3)  /* now installing the HD upgrades */
 #define WM_SETUP_DONE     (WM_APP + 2)  /* wParam: 1 ok; lParam: wchar_t * message, freed */
 
+static HWND s_extras_box;
+static int s_extras = 1;               /* install the HD upgrades; /noextras turns off */
 static HWND s_wnd, s_src, s_dst, s_copy, s_install, s_status, s_progress;
 static HFONT s_font, s_title_font;
 static int s_dpi = 96;
@@ -451,6 +456,73 @@ static int iso_extract(const wchar_t *to)
     return t.ok;
 }
 
+/* The HD upgrades: a pack of files (tools/make_extras_pack.py) unpacked
+ * beside the exe. 1 when done, or when this build has none. */
+static int has_extras(void)
+{
+    return FindResourceW(NULL, MAKEINTRESOURCEW(RES_EXTRAS), (LPCWSTR)RT_RCDATA) != NULL;
+}
+
+static int unpack_extras(const wchar_t *dir)
+{
+    HRSRC r = FindResourceW(NULL, MAKEINTRESOURCEW(RES_EXTRAS), (LPCWSTR)RT_RCDATA);
+    HGLOBAL g = r ? LoadResource(NULL, r) : NULL;
+    const BYTE *d = g ? (const BYTE *)LockResource(g) : NULL, *end;
+    DWORD n = r ? SizeofResource(NULL, r) : 0, count, i;
+
+    if (!r)
+        return 1;
+    if (!d || n < 8 || memcmp(d, "SMXP", 4))
+        return 0;
+    end = d + n;
+    memcpy(&count, d + 4, 4);
+    d += 8;
+    s_total = n;
+    s_done = 0;
+    for (i = 0; i < count; i++) {
+        WORD plen;
+        DWORD size, put;
+        char rel[MAX_PATH];
+        wchar_t wrel[MAX_PATH], path[MAX_PATH], *q;
+        HANDLE f;
+
+        if (end - d < 2) return 0;
+        memcpy(&plen, d, 2);
+        d += 2;
+        if (plen >= MAX_PATH || end - d < plen + 4) return 0;
+        memcpy(rel, d, plen);
+        rel[plen] = 0;
+        d += plen;
+        memcpy(&size, d, 4);
+        d += 4;
+        if ((DWORD)(end - d) < size) return 0;
+        if (!MultiByteToWideChar(CP_UTF8, 0, rel, -1, wrel, MAX_PATH) || wcsstr(wrel, L"..")
+                || wrel[0] == L'/' || wcschr(wrel, L':'))
+            return 0;
+        for (q = wrel; *q; q++)
+            if (*q == L'/') *q = L'\\';
+        _snwprintf(path, MAX_PATH, L"%s\\%s", dir, wrel);
+        if ((q = wcsrchr(path, L'\\')) != NULL) {
+            *q = 0;
+            SHCreateDirectoryExW(NULL, path, NULL);
+            *q = L'\\';
+        }
+        f = CreateFileW(path, GENERIC_WRITE, 0, NULL, CREATE_ALWAYS, FILE_ATTRIBUTE_NORMAL, NULL);
+        if (f == INVALID_HANDLE_VALUE)
+            return 0;
+        put = 0;
+        if (size && (!WriteFile(f, d, size, &put, NULL) || put != size)) {
+            CloseHandle(f);
+            return 0;
+        }
+        CloseHandle(f);
+        d += size;
+        s_done += size + plen + 6;
+        post_progress();
+    }
+    return 1;
+}
+
 static int write_resource(int id, const wchar_t *path)
 {
     HRSRC r = FindResourceW(NULL, MAKEINTRESOURCEW(id), (LPCWSTR)RT_RCDATA);
@@ -538,6 +610,14 @@ static DWORD WINAPI install_thread(LPVOID unused)
             return 0;
         }
     }
+    if (s_extras && has_extras()) {
+        if (!s_silent)
+            PostMessageW(s_wnd, WM_SETUP_STATUS, 0, 0);
+        if (!unpack_extras(s_dst_dir)) {
+            done(0, L"Installing the HD upgrades failed part way. Check there is enough free space and try again.");
+            return 0;
+        }
+    }
     /* settings.ini: the launcher fills in the rest the first time it saves. */
     _snwprintf(ini, MAX_PATH, L"%s\\settings.ini", s_dst_dir);
     if (!exists(ini) && (f = _wfopen(ini, L"w")) != NULL) {
@@ -606,6 +686,7 @@ static void start_install(void)
     GetWindowTextW(s_src, s_src_dir, MAX_PATH);
     GetWindowTextW(s_dst, s_dst_dir, MAX_PATH);
     s_copy_game = SendMessageW(s_copy, BM_GETCHECK, 0, 0) == BST_CHECKED;
+    s_extras = s_extras_box && SendMessageW(s_extras_box, BM_GETCHECK, 0, 0) == BST_CHECKED;
     if (!s_src_dir[0] || !s_dst_dir[0]) {
         status(L"Choose where your game is and where to install.");
         return;
@@ -619,6 +700,7 @@ static void start_install(void)
     EnableWindow(s_install, FALSE);
     EnableWindow(s_src, FALSE);
     EnableWindow(s_dst, FALSE);
+    if (s_extras_box) EnableWindow(s_extras_box, FALSE);
     status(s_iso != INVALID_HANDLE_VALUE ? L"Installing: unpacking your disc image (about 2 GB)..."
            : s_copy_game ? L"Installing: copying your game (about 2 GB)..." : L"Installing...");
     SendMessageW(s_progress, PBM_SETPOS, 0, 0);
@@ -646,12 +728,18 @@ static LRESULT CALLBACK wnd_proc(HWND w, UINT m, WPARAM wp, LPARAM lp)
                                 L"folder where it is. A disc image is always unpacked.",
                      BS_AUTOCHECKBOX | BS_MULTILINE, 20, 212, 520, 36, ID_COPY, s_font);
         SendMessageW(s_copy, BM_SETCHECK, BST_CHECKED, 0);
-        s_progress = CreateWindowExW(0, PROGRESS_CLASSW, NULL, WS_CHILD | WS_VISIBLE, px(20), px(258), px(520), px(18),
+        if (has_extras()) {
+            s_extras_box = add(L"BUTTON", L"Install the HD upgrades: sharper textures, HUD and loading screens, upscaled "
+                                          L"movies, subtitles and the Shocker costume (about 180 MB)",
+                               BS_AUTOCHECKBOX | BS_MULTILINE, 20, 252, 520, 36, ID_EXTRAS, s_font);
+            SendMessageW(s_extras_box, BM_SETCHECK, BST_CHECKED, 0);
+        }
+        s_progress = CreateWindowExW(0, PROGRESS_CLASSW, NULL, WS_CHILD | WS_VISIBLE, px(20), px(298), px(520), px(18),
                                      w, (HMENU)ID_PROGRESS, GetModuleHandleW(NULL), NULL);
         SendMessageW(s_progress, PBM_SETRANGE32, 0, 100);
-        s_status = add(L"STATIC", L"", SS_LEFT, 20, 284, 520, 40, ID_STATUS, s_font);
-        s_install = add(L"BUTTON", L"Install", BS_DEFPUSHBUTTON, 366, 330, 82, 28, ID_INSTALL, s_font);
-        add(L"BUTTON", L"Close", BS_PUSHBUTTON, 458, 330, 82, 28, ID_CLOSE, s_font);
+        s_status = add(L"STATIC", L"", SS_LEFT, 20, 324, 520, 40, ID_STATUS, s_font);
+        s_install = add(L"BUTTON", L"Install", BS_DEFPUSHBUTTON, 366, 370, 82, 28, ID_INSTALL, s_font);
+        add(L"BUTTON", L"Close", BS_PUSHBUTTON, 458, 370, 82, 28, ID_CLOSE, s_font);
         if (SUCCEEDED(SHGetKnownFolderPath(&FOLDERID_UserProgramFiles, 0, NULL, &local))) {
             _snwprintf(def, MAX_PATH, L"%s\\Spider-Man", local);
             SetWindowTextW(s_dst, def);
@@ -672,6 +760,10 @@ static LRESULT CALLBACK wnd_proc(HWND w, UINT m, WPARAM wp, LPARAM lp)
         if (lp)
             SendMessageW(s_progress, PBM_SETPOS, (WPARAM)(wp * 100 / lp), 0);
         return 0;
+    case WM_SETUP_STATUS:
+        status(L"Installing the HD upgrades...");
+        SendMessageW(s_progress, PBM_SETPOS, 0, 0);
+        return 0;
     case WM_SETUP_DONE: {
         wchar_t *msg = (wchar_t *)lp;
         SendMessageW(s_progress, PBM_SETPOS, wp ? 100 : 0, 0);
@@ -684,6 +776,7 @@ static LRESULT CALLBACK wnd_proc(HWND w, UINT m, WPARAM wp, LPARAM lp)
             EnableWindow(s_src, TRUE);
             EnableWindow(s_dst, TRUE);
         }
+        if (s_extras_box) EnableWindow(s_extras_box, !wp);
         return 0;
     }
     case WM_CTLCOLORSTATIC:
@@ -717,6 +810,7 @@ int WINAPI wWinMain(HINSTANCE inst, HINSTANCE prev, PWSTR cmd, int show)
             if (!wcsncmp(argv[i], L"/game=", 6)) wcsncpy(s_src_dir, argv[i] + 6, MAX_PATH - 1);
             else if (!wcsncmp(argv[i], L"/dest=", 6)) wcsncpy(s_dst_dir, argv[i] + 6, MAX_PATH - 1);
             else if (!wcscmp(argv[i], L"/nocopy")) s_copy_game = 0;
+            else if (!wcscmp(argv[i], L"/noextras")) s_extras = 0;
         }
         if (!s_src_dir[0] || !s_dst_dir[0])
             return 2;
@@ -750,7 +844,7 @@ int WINAPI wWinMain(HINSTANCE inst, HINSTANCE prev, PWSTR cmd, int show)
     wc.lpszClassName = L"SpiderManSetup";
     wc.hIcon = LoadIcon(NULL, IDI_APPLICATION);
     RegisterClassW(&wc);
-    r.left = 0; r.top = 0; r.right = px(560); r.bottom = px(372);
+    r.left = 0; r.top = 0; r.right = px(560); r.bottom = px(412);
     AdjustWindowRect(&r, WS_OVERLAPPED | WS_CAPTION | WS_SYSMENU | WS_MINIMIZEBOX, FALSE);
     CreateWindowW(L"SpiderManSetup", L"Spider-Man (2002) PC port - Setup",
                   WS_OVERLAPPED | WS_CAPTION | WS_SYSMENU | WS_MINIMIZEBOX, CW_USEDEFAULT, CW_USEDEFAULT,
