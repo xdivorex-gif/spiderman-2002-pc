@@ -791,7 +791,9 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance,
     /* Step 4: Set game directory for file I/O path translation */
     {
         extern void xbox_path_init(const char *game_dir, const char *save_dir);
+        extern void legal_pc_ensure(const char *game_dir);
         xbox_path_init(game_dir(), NULL);
+        legal_pc_ensure(game_dir());   /* the PC legal screen, by default (legal_pc.c) */
     }
 
     /* Step 5: Initialize kernel bridge (thunk table in Xbox memory) */

@@ -62,6 +62,7 @@ set(GAME_SOURCES
     src/subtitles.c         # transcribed voice lines and movies, on screen
     src/movie_upscale.c     # movies\NAME.mp4 shown for the Bink of that name
     src/movement.c          # earlier run, no dead spot on the left stick
+    src/legal_pc.c          # the PC legal screen, made from the player's own copy
     src/shocker_heat.c      # his gauntlets' heat, the limit on his specials
     # Add game-specific sources here, e.g.:
     # src/asset_loader.c
