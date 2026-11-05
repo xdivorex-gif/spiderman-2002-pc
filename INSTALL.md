@@ -82,23 +82,6 @@ blasts, tornado, yank and charged gauntlets (L2 + a face button), an
 overheat gauge in place of web fluid, and his own HUD. It is still a work in
 progress: some moves are rough and more updates are coming.
 
-## Troubleshooting
-
-| Problem | What to do |
-|---|---|
-| "That file is not an Xbox disc image" | The file is an image of another console's disc (for example the PlayStation 2 version) or is damaged. Choose the Xbox image. |
-| "That folder has no default.xbe" | Choose the folder that directly holds `default.xbe`, not a folder above it. |
-| "default.xbe does not match" | The port needs the original NTSC Xbox release. Other releases are not supported yet. |
-| "Failed to load default.xbe" when starting | The game folder moved. Run the installer again, or set `DataDir=` under `[Game]` in `settings.ini` in the install folder. |
-| The screen is black or the wrong size | Open the launcher and set a resolution your monitor supports, or turn off fullscreen. |
-| The controller does nothing | Connect it before starting the game. PlayStation controllers need Steam Input or DS4Windows. |
-
-## Uninstalling
-
-Delete the install folder and the two **Spider-Man** shortcuts. Your disc
-image, or your own game folder if you unticked the copy option, is left as
-it was.
-
 ---
 
 This is an unofficial fan project, not affiliated with or endorsed by
