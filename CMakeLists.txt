@@ -147,13 +147,20 @@ target_link_libraries(SpiderManLauncher PRIVATE comctl32 msimg32)
 # here so it names the exes where this build puts them.
 set(SETUP_GAME_EXE "${CMAKE_BINARY_DIR}/Release/spiderman_recomp.exe")
 set(SETUP_LAUNCHER_EXE "${CMAKE_BINARY_DIR}/Release/SpiderManLauncher.exe")
-file(WRITE ${CMAKE_BINARY_DIR}/setup.rc
-     "201 RCDATA \"${SETUP_GAME_EXE}\"\n202 RCDATA \"${SETUP_LAUNCHER_EXE}\"\n")
+set(SETUP_RC "201 RCDATA \"${SETUP_GAME_EXE}\"\n202 RCDATA \"${SETUP_LAUNCHER_EXE}\"\n")
+set(SETUP_DEPENDS "${SETUP_GAME_EXE};${SETUP_LAUNCHER_EXE}")
+# The installer's song (not in the repo): played while setup is open.
+set(SETUP_MUSIC "${CMAKE_CURRENT_SOURCE_DIR}/assets/installer_music.mp3")
+if(EXISTS ${SETUP_MUSIC})
+    string(APPEND SETUP_RC "203 RCDATA \"${SETUP_MUSIC}\"\n")
+    list(APPEND SETUP_DEPENDS ${SETUP_MUSIC})
+endif()
+file(WRITE ${CMAKE_BINARY_DIR}/setup.rc "${SETUP_RC}")
 add_executable(SpiderManSetup WIN32 src/setup.c ${CMAKE_BINARY_DIR}/setup.rc)
-target_link_libraries(SpiderManSetup PRIVATE comctl32 bcrypt shell32 ole32 uuid)
+target_link_libraries(SpiderManSetup PRIVATE comctl32 bcrypt shell32 ole32 uuid winmm)
 add_dependencies(SpiderManSetup ${PROJECT_NAME} SpiderManLauncher)
 set_source_files_properties(${CMAKE_BINARY_DIR}/setup.rc PROPERTIES
-    OBJECT_DEPENDS "${SETUP_GAME_EXE};${SETUP_LAUNCHER_EXE}")
+    OBJECT_DEPENDS "${SETUP_DEPENDS}")
 
 # The game's text with PC wording (tools/make_overlay.py builds overlay/),
 # beside the exe where settings.c points RECOMP_OVERLAY_DIR.

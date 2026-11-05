@@ -46,9 +46,10 @@ refined. More updates to the Shocker costume will come in future releases.
 ## Installing
 
 Download `SpiderManSetup.exe` from the [Releases](../../releases) page and
-run it. It asks for your copy of the game (the unpacked disc: a folder
-holding `default.xbe` and `data`), checks it, and installs the port with a
-desktop shortcut. See [INSTALL.md](INSTALL.md) for the full steps.
+run it. It asks for your copy of the game (its Xbox disc image, `.iso`, or
+the unpacked disc: a folder holding `default.xbe` and `data`), checks it,
+and installs the port with a desktop shortcut. It plays a song while it is
+open (when the build includes one); the Music button turns it off. See [INSTALL.md](INSTALL.md) for the full steps.
 
 ## Building from source
 
@@ -90,3 +91,10 @@ This is an unofficial fan project, not affiliated with or endorsed by
 Activision, Treyarch, Marvel, Sony Pictures or Microsoft. Spider-Man and all
 related characters are trademarks of their owners. The project contains no
 copyrighted game material and does not help to obtain it.
+
+## License
+
+The port's own code is released under the [MIT License](LICENSE). It does
+not cover the game: Spider-Man (2002) and its content belong to their
+owners, and nothing from the game is in this repository or its releases.
+The xboxrecomp toolkit is MIT-licensed by its author (sp00nz).

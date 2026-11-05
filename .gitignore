@@ -102,3 +102,6 @@ src/recomp/
 # Third-party tools fetched locally
 tools/realesrgan/
 tools/whisper/
+
+# The installer song (assets/installer_music.mp3): kept out of the repo
+assets/installer_music.mp3

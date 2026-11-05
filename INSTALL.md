@@ -14,39 +14,36 @@ about ten minutes, most of it copying the game.
 - Windows 10 or 11, 64-bit
 - A graphics card with Direct3D 11 (any card from the last ten years)
 - About 2.5 GB of free space
-- Your own copy of *Spider-Man* (2002) for the original Xbox, unpacked to a
-  folder (see step 1)
+- Your own copy of *Spider-Man* (2002) for the original Xbox: a disc image
+  (`.iso`) or the unpacked disc (see step 1)
 - A controller is recommended (Xbox controllers work directly; PlayStation
   controllers work through Steam or DS4Windows). Keyboard works too.
 
-## 1. Get your game's files onto your PC
+## 1. Get your game onto your PC
 
-The installer needs the contents of your game disc as a normal folder: one
-that holds a file called `default.xbe` and a folder called `data`.
+The installer takes either of these:
 
-Xbox discs cannot be read by a PC's disc drive. The usual way is to dump the
-game from your own Xbox (for example with a softmodded console and an FTP
-client) or to extract an image you made of your own disc with a tool such
-as *extract-xiso*. Put the result in a folder, for example
-`C:\Games\Spider-Man Xbox`.
+- **A disc image** (`.iso`, `.xiso`) you made of your own disc: both plain
+  game images (as made by *extract-xiso*) and full disc images work. The
+  installer unpacks it for you.
+- **The unpacked disc**: a folder that holds a file called `default.xbe` and
+  a folder called `data`, for example dumped from your own Xbox.
 
-When you open that folder you should see:
-
-```
-default.xbe
-data\
-```
+Xbox discs cannot be read by a PC's disc drive, so make the image or dump
+on your own console or with a compatible drive.
 
 ## 2. Run the installer
 
 1. Download **SpiderManSetup.exe** with the link above and run it. Windows
    may warn that it is from an unknown publisher: choose *More info*, then
    *Run anyway*.
-2. **Your game:** click *Browse...* and choose the folder from step 1.
+2. **Your game:** click *Image...* to choose your `.iso`, or *Folder...* to
+   choose the unpacked disc.
 3. **Install to:** leave the suggested folder, or choose another.
 4. **Copy the game into the install folder:** leave it ticked to keep
-   everything in one place (about 2 GB). Untick it to use your game folder
-   where it is; keep that folder in place afterwards.
+   everything in one place (about 2 GB). Untick it to use an unpacked game
+   folder where it is; keep that folder in place afterwards. A disc image is
+   always unpacked into the install folder.
 5. Click **Install**.
 
 The installer checks that your `default.xbe` is the release the port is made
@@ -89,6 +86,7 @@ progress: some moves are rough and more updates are coming.
 
 | Problem | What to do |
 |---|---|
+| "That file is not an Xbox disc image" | The file is an image of another console's disc (for example the PlayStation 2 version) or is damaged. Choose the Xbox image. |
 | "That folder has no default.xbe" | Choose the folder that directly holds `default.xbe`, not a folder above it. |
 | "default.xbe does not match" | The port needs the original NTSC Xbox release. Other releases are not supported yet. |
 | "Failed to load default.xbe" when starting | The game folder moved. Run the installer again, or set `DataDir=` under `[Game]` in `settings.ini` in the install folder. |
@@ -97,8 +95,9 @@ progress: some moves are rough and more updates are coming.
 
 ## Uninstalling
 
-Delete the install folder and the two **Spider-Man** shortcuts. If you
-unticked the copy option, your own game folder is left as it was.
+Delete the install folder and the two **Spider-Man** shortcuts. Your disc
+image, or your own game folder if you unticked the copy option, is left as
+it was.
 
 ---
 
