@@ -19,7 +19,6 @@
 #include <shobjidl.h>
 #include <shellapi.h>
 #include <bcrypt.h>
-#include <mmsystem.h>
 #include <stdio.h>
 #include <wchar.h>
 
@@ -32,7 +31,6 @@ static const char XBE_SHA1[] = "09fad7548d11503458882f5c8ab45d8ed86d2a42";
 
 #define RES_GAME_EXE     201
 #define RES_LAUNCHER_EXE 202
-#define RES_MUSIC        203   /* the installer's song, when the build had one */
 
 #define ID_SRC       101
 #define ID_SRC_BROWSE 102
@@ -44,7 +42,6 @@ static const char XBE_SHA1[] = "09fad7548d11503458882f5c8ab45d8ed86d2a42";
 #define ID_STATUS    106
 #define ID_PROGRESS  107
 #define ID_SRC_IMAGE 108
-#define ID_MUSIC     109
 
 #define WM_SETUP_PROGRESS (WM_APP + 1)  /* wParam: done / 1 MB, lParam: total / 1 MB */
 #define WM_SETUP_DONE     (WM_APP + 2)  /* wParam: 1 ok; lParam: wchar_t * message, freed */
@@ -595,42 +592,6 @@ static void browse(HWND edit, const wchar_t *title, int image)
     d->lpVtbl->Release(d);
 }
 
-/* ── music ────────────────────────────────────────────────────── */
-/*
- * The song (resource 203, only in builds made with assets/installer_music.mp3)
- * plays on a loop through MCI while the window is open, from a temp copy.
- */
-static wchar_t s_music_path[MAX_PATH];
-static int s_music_on;
-static HWND s_music_btn;
-
-static int music_start(void)
-{
-    wchar_t tmp[MAX_PATH], cmd[MAX_PATH + 64];
-    if (!FindResourceW(NULL, MAKEINTRESOURCEW(RES_MUSIC), (LPCWSTR)RT_RCDATA) || !GetTempPathW(MAX_PATH, tmp))
-        return 0;
-    _snwprintf(s_music_path, MAX_PATH, L"%sSpiderManSetup_music.mp3", tmp);
-    if (!write_resource(RES_MUSIC, s_music_path))
-        return 0;
-    _snwprintf(cmd, MAX_PATH + 64, L"open \"%s\" type mpegvideo alias song", s_music_path);
-    if (mciSendStringW(cmd, NULL, 0, NULL) != 0) {
-        DeleteFileW(s_music_path);
-        return 0;
-    }
-    mciSendStringW(L"play song repeat", NULL, 0, NULL);
-    s_music_on = 1;
-    return 1;
-}
-
-static void music_stop(void)
-{
-    if (!s_music_path[0])
-        return;
-    mciSendStringW(L"close song", NULL, 0, NULL);
-    DeleteFileW(s_music_path);
-    s_music_path[0] = 0;
-}
-
 static HWND add(const wchar_t *cls, const wchar_t *text, DWORD style, int x, int y, int w, int h, int id, HFONT font)
 {
     HWND c = CreateWindowExW(0, cls, text, WS_CHILD | WS_VISIBLE | style, px(x), px(y), px(w), px(h),
@@ -691,8 +652,6 @@ static LRESULT CALLBACK wnd_proc(HWND w, UINT m, WPARAM wp, LPARAM lp)
         s_status = add(L"STATIC", L"", SS_LEFT, 20, 284, 520, 40, ID_STATUS, s_font);
         s_install = add(L"BUTTON", L"Install", BS_DEFPUSHBUTTON, 366, 330, 82, 28, ID_INSTALL, s_font);
         add(L"BUTTON", L"Close", BS_PUSHBUTTON, 458, 330, 82, 28, ID_CLOSE, s_font);
-        if (music_start())
-            s_music_btn = add(L"BUTTON", L"Music: on", BS_PUSHBUTTON, 20, 330, 96, 28, ID_MUSIC, s_font);
         if (SUCCEEDED(SHGetKnownFolderPath(&FOLDERID_UserProgramFiles, 0, NULL, &local))) {
             _snwprintf(def, MAX_PATH, L"%s\\Spider-Man", local);
             SetWindowTextW(s_dst, def);
@@ -705,11 +664,6 @@ static LRESULT CALLBACK wnd_proc(HWND w, UINT m, WPARAM wp, LPARAM lp)
         case ID_SRC_BROWSE: browse(s_src, L"Choose your unpacked game disc", 0); break;
         case ID_SRC_IMAGE:  browse(s_src, L"Choose your game's disc image", 1); break;
         case ID_DST_BROWSE: browse(s_dst, L"Choose where to install", 0); break;
-        case ID_MUSIC:
-            s_music_on = !s_music_on;
-            mciSendStringW(s_music_on ? L"play song repeat" : L"pause song", NULL, 0, NULL);
-            SetWindowTextW(s_music_btn, s_music_on ? L"Music: on" : L"Music: off");
-            break;
         case ID_INSTALL:    start_install(); break;
         case ID_CLOSE:      DestroyWindow(w); break;
         }
@@ -736,7 +690,6 @@ static LRESULT CALLBACK wnd_proc(HWND w, UINT m, WPARAM wp, LPARAM lp)
         SetBkMode((HDC)wp, TRANSPARENT);
         return (LRESULT)GetSysColorBrush(COLOR_WINDOW);
     case WM_DESTROY:
-        music_stop();
         PostQuitMessage(0);
         return 0;
     }

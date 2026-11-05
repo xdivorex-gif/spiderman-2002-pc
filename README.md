@@ -48,8 +48,7 @@ refined. More updates to the Shocker costume will come in future releases.
 Download `SpiderManSetup.exe` from the [Releases](../../releases) page and
 run it. It asks for your copy of the game (its Xbox disc image, `.iso`, or
 the unpacked disc: a folder holding `default.xbe` and `data`), checks it,
-and installs the port with a desktop shortcut. It plays a song while it is
-open (when the build includes one); the Music button turns it off. See [INSTALL.md](INSTALL.md) for the full steps.
+and installs the port with a desktop shortcut. See [INSTALL.md](INSTALL.md) for the full steps.
 
 ## Building from source
 
