@@ -142,11 +142,26 @@ endif()
 add_executable(SpiderManLauncher WIN32 src/launcher.c src/launcher.rc)
 target_link_libraries(SpiderManLauncher PRIVATE comctl32 msimg32)
 
+# The installer (src/setup.c): carries the two exes above as resources and
+# installs them beside the player's own copy of the game. Its .rc is made
+# here so it names the exes where this build puts them.
+set(SETUP_GAME_EXE "${CMAKE_BINARY_DIR}/Release/spiderman_recomp.exe")
+set(SETUP_LAUNCHER_EXE "${CMAKE_BINARY_DIR}/Release/SpiderManLauncher.exe")
+file(WRITE ${CMAKE_BINARY_DIR}/setup.rc
+     "201 RCDATA \"${SETUP_GAME_EXE}\"\n202 RCDATA \"${SETUP_LAUNCHER_EXE}\"\n")
+add_executable(SpiderManSetup WIN32 src/setup.c ${CMAKE_BINARY_DIR}/setup.rc)
+target_link_libraries(SpiderManSetup PRIVATE comctl32 bcrypt shell32 ole32 uuid)
+add_dependencies(SpiderManSetup ${PROJECT_NAME} SpiderManLauncher)
+set_source_files_properties(${CMAKE_BINARY_DIR}/setup.rc PROPERTIES
+    OBJECT_DEPENDS "${SETUP_GAME_EXE};${SETUP_LAUNCHER_EXE}")
+
 # The game's text with PC wording (tools/make_overlay.py builds overlay/),
 # beside the exe where settings.c points RECOMP_OVERLAY_DIR.
-add_custom_command(TARGET ${PROJECT_NAME} POST_BUILD
-    COMMAND ${CMAKE_COMMAND} -E copy_directory
-            ${CMAKE_CURRENT_SOURCE_DIR}/overlay $<TARGET_FILE_DIR:${PROJECT_NAME}>/overlay)
+if(EXISTS ${CMAKE_CURRENT_SOURCE_DIR}/overlay)
+    add_custom_command(TARGET ${PROJECT_NAME} POST_BUILD
+        COMMAND ${CMAKE_COMMAND} -E copy_directory
+                ${CMAKE_CURRENT_SOURCE_DIR}/overlay $<TARGET_FILE_DIR:${PROJECT_NAME}>/overlay)
+endif()
 
 # Hero models for the costume panel's 3D view (tools/xbxm.py --export builds
 # previews/ from game_files; costume_panel.c reads them), beside the exe.
@@ -158,6 +173,8 @@ endif()
 
 # High-res menu art and fonts (texpack/<texels hash>.png, gpu_backend.c),
 # beside the exe.
-add_custom_command(TARGET ${PROJECT_NAME} POST_BUILD
-    COMMAND ${CMAKE_COMMAND} -E copy_directory
-            ${CMAKE_CURRENT_SOURCE_DIR}/texpack $<TARGET_FILE_DIR:${PROJECT_NAME}>/texpack)
+if(EXISTS ${CMAKE_CURRENT_SOURCE_DIR}/texpack)
+    add_custom_command(TARGET ${PROJECT_NAME} POST_BUILD
+        COMMAND ${CMAKE_COMMAND} -E copy_directory
+                ${CMAKE_CURRENT_SOURCE_DIR}/texpack $<TARGET_FILE_DIR:${PROJECT_NAME}>/texpack)
+endif()
