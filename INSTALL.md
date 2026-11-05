@@ -3,8 +3,8 @@
 This guide takes you from your Xbox disc to playing the PC port. It takes
 about ten minutes, most of it copying the game.
 
-**Download:** [SpiderManSetup.exe](https://github.com/xdivorex-gif/spiderman-2002-pc/releases/latest/download/SpiderManSetup.exe)
-(about 220 MB) · [all releases](https://github.com/xdivorex-gif/spiderman-2002-pc/releases)
+**Download:** [SpiderManSetup.exe](../../releases/latest/download/SpiderManSetup.exe)
+(about 220 MB) · [all releases](../../releases)
 
 > The installer contains no game files. You need your own copy of the
 > original Xbox game, *Spider-Man* (2002, NTSC release).
