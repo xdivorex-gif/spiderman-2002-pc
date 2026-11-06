@@ -70,7 +70,7 @@ static const struct { const char *value, *label; } s_costumes[] = {
     { "mjspidey",    "mjspidey (GIRLNEXTDOOR)" },
     { "shockspidey", "shockspidey (HERMANSCHULTZ)" },
     { "scispidey",   "scispidey (SERUM)" },
-    { "thugspidey",  "thugspidey (KNUCKLES)" },
+    { "thugspidey",  "Venom (prototype)" },
     { "btgspidey",   "btgspidey (STICKYRICE)" },
     { "sthspidey",   "sthspidey (THUGSRUS)" },
     { "helispidey",  "helispidey (CAPTAINSTACEY)" },

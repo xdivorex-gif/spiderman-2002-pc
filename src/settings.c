@@ -21,6 +21,7 @@
  *                             | 4:3: original shape, bars
  *   Fullscreen=0              1: borderless fullscreen at start (F11 toggles)
  *   VSync=1                   0: present without waiting for the display
+ *   FrameRate=60              the game's own 60 | N: cap at N fps | 0: unlocked
  *   [Graphics]
  *   Renderer=gpu              gpu: D3D11 | cpu: the software rasteriser
  *                             (slower, the reference; always 640x480)
@@ -150,6 +151,17 @@ void settings_apply(void)
         GetPrivateProfileIntA("Display", "Fullscreen", 0, ini) ? "1" : NULL);
     set("RECOMP_PRESENT_VSYNC",
         GetPrivateProfileIntA("Display", "VSync", 1, ini) ? NULL : "0");
+    {   /* FrameRate: 60 the game's own | N a cap | 0 unlocked -- in play only;
+         * the menus keep the console's pacing (frame_rate.c). */
+        int hz = GetPrivateProfileIntA("Display", "FrameRate", 60, ini);
+        char s[32];
+        if (hz == 60 || hz < 0) {
+            set("RECOMP_FRAME_RATE", NULL);
+        } else {
+            sprintf(s, "%d", hz);
+            set("RECOMP_FRAME_RATE", s);
+        }
+    }
 
     GetPrivateProfileStringA("Controls", "ButtonPrompts", "xbox", v, sizeof v, ini);
     ps = !_stricmp(v, "ps4") ? "ps4"

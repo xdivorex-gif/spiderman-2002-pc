@@ -400,6 +400,26 @@ void sub_00051C00_enter(void)
     shocker_powers_frame();
 }
 
+/* The hero's combo action update, where his strikes are decided (distance
+ * against both radii plus the move's range adjust): Venom's tentacles reach
+ * further (venom_reach.c). */
+void venom_combo_reach(void);
+
+void sub_001E4100_enter(void)
+{
+    venom_combo_reach();
+}
+
+/* The game's frame: spins until the minimum frame time, then steps the world
+ * by the time that passed. The cap (settings.ini FrameRate) sets that minimum
+ * (frame_rate.c). */
+void frame_rate_frame(void);
+
+void sub_000F6FF0_enter(void)
+{
+    frame_rate_frame();
+}
+
 void sub_002B50B4_enter(void)
 {
     shocker_powers_damage_record();

@@ -255,6 +255,70 @@ index 21f75d1..7a8de10 100644
          /* Releasing a mutex this thread does not own is the common failure. */
          return (err == ERROR_NOT_OWNER) ? STATUS_MUTANT_NOT_OWNED
                                          : STATUS_INVALID_HANDLE;
+diff --git a/src/kernel/nv2a_pb_exec.c b/src/kernel/nv2a_pb_exec.c
+index df54246..0dff85a 100644
+--- a/src/kernel/nv2a_pb_exec.c
++++ b/src/kernel/nv2a_pb_exec.c
+@@ -340,7 +340,7 @@ static struct {
+     /* Vertex programs (nv2a_vsh_interp.c) and the depth buffer, which
+      * together are what a 3D scene needs and a 2D one never used. */
+     uint32_t xf_mode;                   /* TRANSFORM_EXECUTION_MODE: 2 = program */
+-    uint32_t batches_program, verts_program, tris_behind;
++    uint32_t batches_program, verts_program, tris_behind, tris_degenerate;
+     /* Where program-path triangles go, so "nothing drew" has a reason. */
+     uint32_t xf_degenerate, xf_offscreen, xf_drawn;
+     uint64_t xf_depth_fail, xf_pixels;
+@@ -2938,6 +2938,20 @@ static void raster_xf_clipped(const Nv2aVshOutput *a, const Nv2aVshOutput *b,
+     }
+     planes = near_z ? 2 : 1;
+     in[0] = a; in[1] = b; in[2] = c;
++    /* The common case first, with no copies: all three in front of every
++     * plane (the same distances xf_clip_dist gives on the homogeneous copy
++     * below: w - NV_CLIP_W, and (z - o.z) * w). Copying three whole outputs
++     * per triangle only to throw them away cost most of this function. */
++    for (i = 0; i < 3; i++) {
++        float w = in[i]->pos[3], d0 = w - NV_CLIP_W;
++        float d1 = planes > 1 ? (in[i]->pos[2] - s_xf_o[2]) * w : 0.0f;
++        if (!(d0 >= 0.0f) || !(d1 >= 0.0f) || d0 - d0 != 0.0f || d1 - d1 != 0.0f)
++            break;
++    }
++    if (i == 3) {
++        raster_xf_triangle(a, b, c);
++        return;
++    }
+     for (i = 0; i < 3; i++) {
+         p0[i] = *in[i];
+         for (j = 0; j < 3; j++)
+@@ -3399,6 +3413,13 @@ static void raster_batch_program(void)
+          * its first two vertices so the whole strip keeps one winding, as
+          * the hardware does (a back end that culls drops half otherwise). */
+         for (i = 0; i + 2 < n; i++) {
++            /* A repeated index (the joins strips are stitched with) makes a
++             * triangle of no area: nothing to draw, skip its clip and set-up. */
++            uint32_t ia = s_gpu.idx[i], ib = s_gpu.idx[i+1], ic = s_gpu.idx[i+2];
++            if (ia == ib || ib == ic || ia == ic) {
++                s_gpu.tris_degenerate++;
++                continue;
++            }
+             if (i & 1)
+                 raster_xf_clipped(&s_xf[i+1], &s_xf[i], &s_xf[i+2]);
+             else
+@@ -4070,9 +4091,15 @@ void nv2a_pb_exec_walk_begin(void)
+  * variable and store the same values, the edge flag before the mode, so the
+  * race costs at most a second log line. No Interlocked: tests link the
+  * executor without the platform layer (tests/nv2a_ffp_backend). */
++/* A title layer may switch pacing at run time (Spider-Man: off in play with
++ * an unlocked frame rate, on in its menus): -1 = the variable's setting. */
++volatile int g_nv2a_flip_pacing_override = -1;
++
+ int nv2a_pb_exec_flip_pacing(void)
+ {
+     static volatile int mode = -1;
++    if (g_nv2a_flip_pacing_override >= 0)
++        return g_nv2a_flip_pacing_override;
+     if (mode < 0) {
+         const char *e = getenv("RECOMP_FLIP_PACING");
+         int m = (!e || !*e || !strcmp(e, "0")) ? 0
 diff --git a/src/usb/usb_gamepad.c b/src/usb/usb_gamepad.c
 index 50c1ffd..6c69fdd 100644
 --- a/src/usb/usb_gamepad.c

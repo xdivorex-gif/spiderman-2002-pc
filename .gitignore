@@ -103,3 +103,7 @@ src/recomp/
 tools/realesrgan/
 tools/whisper/
 
+
+# Game-derived PC Kraven-level build output
+build_pc_zoo/
+tools/__pycache__/

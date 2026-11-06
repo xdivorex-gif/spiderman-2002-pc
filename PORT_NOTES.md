@@ -576,3 +576,5 @@ watch), RECOMP_PANEL_DUMP, RECOMP_COSTUME_RESTART.
   + RECOMP_PAD_LIVE=pad_live.txt (append lines like `start:200`, `a:200`).
 - Controller: works; if it stops, check Steam isn't holding it and
   DualSenseX shows Xbox 360 emulation.
+
+**Performance + frame rate (2026-11-05):** settings.ini [Display] FrameRate=0 unlocks play (src/frame_rate.c: in play -- hero in the world, not the front end's fakehero, not paused -- the limiter float 0x3DDD04 is 1/N or 1 ms and toolkit flip pacing is off via g_nv2a_flip_pacing_override; menus keep 59.94 pacing, the level select steps per frame). Profile (RECOMP_SAMPLE=0 + sample.now beside the exe = capture on demand) in a Venom fight: game thread ~50% in sub_002F2960 (D3D KickOff) waiting on the executor; executor ~70% busy: vertex programs ~39%, raster_xf_clipped 25%. Toolkit nv2a_pb_exec.c: raster_xf_clipped tests the all-inside case on the originals (no 3 output copies per triangle), strips skip repeated-index triangles (tris_degenerate). Fight went 39-55 -> 57-78 fps unlocked; raster_xf_clipped 10.6% -> 3.4% excl. Next: the vertex-program interpreter (lanes_src/lanes_mac/program_inputs) -- on the GPU, or a JIT.

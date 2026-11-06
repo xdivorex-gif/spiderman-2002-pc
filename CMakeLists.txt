@@ -64,6 +64,8 @@ set(GAME_SOURCES
     src/movement.c          # earlier run, no dead spot on the left stick
     src/legal_pc.c          # the PC legal screen, made from the player's own copy
     src/shocker_heat.c      # his gauntlets' heat, the limit on his specials
+    src/venom_reach.c       # Venom's tentacle reach in the melee hit test
+    src/frame_rate.c        # the frame cap: 60, N, or unlocked (FrameRate)
     # Add game-specific sources here, e.g.:
     # src/asset_loader.c
     # src/custom_renderer.c

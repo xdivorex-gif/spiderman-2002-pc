@@ -88,7 +88,7 @@ s_costumes[] = {
     { "mjspidey",    L"mjspidey (GIRLNEXTDOOR)",     7, "MJSPIDEY" },
     { "shockspidey", L"shockspidey (HERMANSCHULTZ)", 8, "SHOCKSPI" },
     { "scispidey",   L"scispidey (SERUM)",           9, "SCISPIDE" },
-    { "thugspidey",  L"thugspidey (KNUCKLES)",      10, "THUGSPID" },
+    { "thugspidey",  L"Venom (prototype)",      10, "THUGSPID" },
     { "btgspidey",   L"btgspidey (STICKYRICE)",     11, "BTGSPIDE" },
     { "sthspidey",   L"sthspidey (THUGSRUS)",       12, "STHSPIDE" },
     { "helispidey",  L"helispidey (CAPTAINSTACEY)", 13, "HELISPID" },
@@ -109,7 +109,8 @@ void xbox_set_extra_overlay(const char *dir);   /* kernel_path.c */
 static void costume_overlay(int row)
 {
     char dir[MAX_PATH], *slash;
-    if (row < 0 || strcmp(s_costumes[row].name, "shockspidey")
+    if (row < 0 || (strcmp(s_costumes[row].name, "shockspidey")
+        && strcmp(s_costumes[row].name, "thugspidey"))
         || !GetModuleFileNameA(NULL, dir, sizeof dir) || !(slash = strrchr(dir, '\\'))) {
         xbox_set_extra_overlay(NULL);
         return;

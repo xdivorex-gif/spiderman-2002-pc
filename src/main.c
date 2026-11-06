@@ -513,11 +513,30 @@ static void sample_into(const char *path, int all, int samples)
     fprintf(stderr, "[SAMPLE] wrote %s\n", path);
 }
 
+/* RECOMP_SAMPLE=0: on demand instead of after a delay -- each time a file
+ * named sample.now appears beside the exe, take a round into
+ * sample_stacks.txt, then delete the flag. */
 static DWORD WINAPI sampler_main(LPVOID arg)
 {
-    Sleep((DWORD)(uintptr_t)arg * 1000u);
-    sample_into("sample_stacks.txt", getenv("RECOMP_SAMPLE_ALL") != NULL, 5000);
-    return 0;
+    char flag[MAX_PATH], *slash;
+    DWORD n;
+
+    if ((uintptr_t)arg) {
+        Sleep((DWORD)(uintptr_t)arg * 1000u);
+        sample_into("sample_stacks.txt", getenv("RECOMP_SAMPLE_ALL") != NULL, 5000);
+        return 0;
+    }
+    n = GetModuleFileNameA(NULL, flag, MAX_PATH);
+    if (!n || n >= MAX_PATH || !(slash = strrchr(flag, '\\')))
+        return 0;
+    strcpy(slash + 1, "sample.now");
+    for (;;) {
+        Sleep(500);
+        if (GetFileAttributesA(flag) == INVALID_FILE_ATTRIBUTES)
+            continue;
+        sample_into("sample_stacks.txt", getenv("RECOMP_SAMPLE_ALL") != NULL, 5000);
+        DeleteFileA(flag);
+    }
 }
 
 /* Hang watch: if the GPU back end has drawn frames and then none for 4 s
