@@ -107,3 +107,6 @@ tools/whisper/
 # Game-derived PC Kraven-level build output
 build_pc_zoo/
 tools/__pycache__/
+
+# third-party tools (RAD Video Tools); downloaded, never committed
+tools_ext/

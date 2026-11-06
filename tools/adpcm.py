@@ -30,6 +30,35 @@ def decode(data):
     return out
 
 
+def decode_channels(data, channels):
+    """Interleaved Xbox ADPCM (the .xss streams: 36 * channels bytes a block,
+    one 4-byte header per channel, then 4 bytes of nibbles per channel in
+    turn) -> one sample list per channel."""
+    if channels == 1:
+        return [decode(data)]
+    size = BLOCK * channels
+    out = [[] for _ in range(channels)]
+    for b in range(0, len(data) - size + 1, size):
+        for c in range(channels):
+            s, idx = struct.unpack_from('<hB', data, b + 4 * c)
+            idx = min(88, idx)
+            ch = out[c]
+            ch.append(s)
+            for r in range(8):
+                o = b + 4 * channels + 4 * (r * channels + c)
+                for byte in data[o:o + 4]:
+                    for n in (byte & 15, byte >> 4):
+                        step = STEPS[idx]
+                        d = step >> 3
+                        if n & 1: d += step >> 2
+                        if n & 2: d += step >> 1
+                        if n & 4: d += step
+                        s = max(-32768, min(32767, s - d if n & 8 else s + d))
+                        idx = max(0, min(88, idx + INDEX[n & 7]))
+                        ch.append(s)
+    return out
+
+
 def encode(pcm):
     """PCM (list of int) -> Xbox ADPCM blocks of 65 samples."""
     out = bytearray()

@@ -43,6 +43,10 @@ import sys
 
 u32 = lambda b, o: struct.unpack_from('<I', b, o)[0]
 
+# Optional material rewrite (callable: material bytes -> material bytes),
+# set by a caller such as pc_zoo.py; None leaves materials as on the Xbox.
+MAT_FIX = None
+
 
 def unpack_normal(n):
     x = n & 0x7FF
@@ -107,7 +111,13 @@ def convert(xb):
         # Every strip entry names its own vertex in the sub-mesh that uses it;
         # skinned vertices need that sub-mesh's palette, so a vertex shared by
         # two palettes is split into one position per palette.
+        # Positions and attributes are shared like the PC's own files: one
+        # position per distinct (place, normal, bones, weights), one attribute
+        # per distinct (colour, uv). Kraven came out with 1938 skinned
+        # positions unshared, more than any PC character has (Scorpion 1419),
+        # and drew with parts missing.
         pos, attr, pairs = [], [], []
+        pos_of, attr_of = {}, {}
         seen = {}
         sub_counts = []
         for s in m['subs']:
@@ -127,17 +137,46 @@ def convert(xb):
                         bi = v[36:40]
                         w = v[40:44]
                         pal = s['palette']
-                        bones = [pal[c] if w[j] and c < len(pal) else 0 for j, c in enumerate(bi)]
-                        ws = [c / 255.0 for c in w]
-                        t = sum(ws) or 1.0
-                        p += struct.pack('<4H4f', *bones, *[q / t for q in ws])
-                    seen[key] = len(pos)
-                    pos.append(p)
-                    attr.append(col + uv + bytes(8))
-                i = seen[key]
-                pairs.append((i, i))
+                        t = sum(w) or 1
+                        infl = sorted(((w[j] / t, pal[c] if c < len(pal) else 0)
+                                       for j, c in enumerate(bi) if w[j]), reverse=True)
+                        infl += [(0.0, 0)] * (4 - len(infl))
+                        p += struct.pack('<4H4f', *[b for _, b in infl], *[q for q, _ in infl])
+                    a = col + uv + bytes(8)
+                    if p not in pos_of:
+                        pos_of[p] = len(pos)
+                        pos.append(p)
+                    if a not in attr_of:
+                        attr_of[a] = len(attr)
+                        attr.append(a)
+                    seen[key] = (pos_of[p], attr_of[a])
+                pairs.append(seen[key])
                 n += 1
             sub_counts.append(n)
+        if skinned:
+            # The Xbox splits a character into one sub-mesh per bone palette;
+            # the PC files keep one sub-mesh per material (Goblin, Mary Jane,
+            # Shocker ...), and Kraven's face part did not draw while split.
+            # Join neighbours with the same material into one strip, stitched
+            # with repeated indices, padding so the second part keeps its
+            # winding (strip triangles alternate).
+            new_pairs, new_counts, new_subs = [], [], []
+            k = 0
+            for s, n in zip(m['subs'], sub_counts):
+                part = pairs[k:k + n]
+                k += n
+                if new_subs and new_subs[-1]['mat'] == s['mat'] and new_pairs and part:
+                    glue = [new_pairs[-1], part[0]]
+                    if (new_counts[-1] + len(glue)) % 2:
+                        glue.append(part[0])
+                    new_pairs += glue + part
+                    new_counts[-1] += len(glue) + len(part)
+                else:
+                    new_subs.append(s)
+                    new_pairs += part
+                    new_counts.append(len(part))
+            m = dict(m, subs=new_subs)
+            pairs, sub_counts = new_pairs, new_counts
         recs.append((m, pos, attr, pairs, sub_counts, skinned))
 
     head = 0x10
@@ -172,18 +211,21 @@ def convert(xb):
                          len(pairs), io if pairs else 0, ntri, io + 12 * ntri if pairs else 0,
                          m['flags'], 0, size)
         out[r + 0x30:r + 0x50] = m['name']
-        out[r + 0x50:r + 0x64] = m['sphere']
         if pos:
+            out[r + 0x50:r + 0x64] = m['sphere']
             xs = [struct.unpack_from('<3f', p, 0) for p in pos]
             lo = [min(c[j] for c in xs) for j in range(3)]
             hi = [max(c[j] for c in xs) for j in range(3)]
-        else:
-            lo = hi = [0.0, 0.0, 0.0]
-        for k in range(8):
-            x = hi[0] if k & 1 else lo[0]
-            z = lo[2] if k & 2 else hi[2]
-            y = lo[1] if k & 4 else hi[1]
-            struct.pack_into('<4f', out, r + 0x64 + 16 * k, x, y, z, 1.0)
+            for k in range(8):
+                x = hi[0] if k & 1 else lo[0]
+                z = lo[2] if k & 2 else hi[2]
+                y = lo[1] if k & 4 else hi[1]
+                struct.pack_into('<4f', out, r + 0x64 + 16 * k, x, y, z, 1.0)
+        # An empty record (every region has one beside its geometry) keeps an
+        # all-zero sphere and box, as the PC's own files do. The Xbox writes a
+        # sphere of radius 1.7e32 there; squared that overflows to infinity,
+        # and the PC's region maths then gave Spider-Man a NaN height, inside
+        # every trigger (all traps firing, the level ending at once).
         bo = r + 0xF4
         so = bo + bone_size[i]
         struct.pack_into('<4I', out, r + 0xE4, len(m['bones']), bo if m['bones'] else 0,
@@ -193,6 +235,8 @@ def convert(xb):
         mo = so + 0x18 * len(m['subs'])
         for k, s in enumerate(m['subs']):
             mat = bytearray(s['mat']) + bytes(8)
+            if MAT_FIX:
+                mat = bytearray(MAT_FIX(bytes(mat)))
             mat[4:0x14] = bytes(0x10)
             struct.pack_into('<6I', out, so + 0x18 * k, 0, sub_counts[k], mo + 0xE8 * k, 0, 0, 0)
             out[mo + 0xE8 * k:mo + 0xE8 * (k + 1)] = mat
